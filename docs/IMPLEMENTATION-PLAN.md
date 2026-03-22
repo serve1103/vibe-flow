@@ -1,0 +1,460 @@
+# Vibe Flow - 구현 계획
+
+> 작성일: 2026-03-22
+> 상태: Draft
+
+---
+
+## 1. 개요
+
+7단계 구현 계획. 각 단계는 독립적으로 배포/테스트 가능하다.
+Phase 2, 3, 4는 Phase 1 완료 후 병렬 진행 가능.
+
+```
+Phase 1: Foundation ─────────────────────┐
+                                         ├─ Phase 5: API + CLI
+Phase 2: Harness ──────── (병렬 가능) ───┤
+Phase 3: Matching Engine ─ (병렬 가능) ───┤
+Phase 4: Block Creator ── (병렬 가능) ───┘
+                                              │
+                                         Phase 6: Web UI
+                                              │
+                                         Phase 7: Integration
+```
+
+---
+
+## 2. 기술 스택
+
+| 레이어 | 기술 | 선정 이유 |
+|--------|------|----------|
+| 런타임 | Node.js 20+ / TypeScript | 범용, 타입 안전, 큰 생태계 |
+| 패키지 매니저 | pnpm | 효율적 모노레포 지원 |
+| 모노레포 | pnpm workspaces + turborepo | 독립 패키지, 점진적 빌드 |
+| API | Fastify | 고성능, 스키마 검증 내장, TS 우선 |
+| 웹 UI | Next.js 14 (App Router) | RSC, 좋은 DX |
+| UI 컴포넌트 | shadcn/ui | 깔끔, 커스터마이징 용이 |
+| DB | SQLite (dev) → PostgreSQL (prod) | Drizzle ORM으로 양쪽 지원 |
+| ORM | Drizzle ORM | 타입 안전, 경량 |
+| 벡터 매칭 | vectra | 로컬 순수 JS 벡터 DB |
+| 블록 정의 | YAML + Zod 검증 | 가독성, diff 가능, 버전 관리 |
+| CLI 실행 | `claude -p --output-format stream-json` | Claude Code CLI 직접 통합 |
+| 테스트 | Vitest | 빠름, TS 네이티브 |
+| 검증 | Zod | 런타임 타입 체크 |
+
+---
+
+## 3. Phase 1: Foundation (3-4일)
+
+> 블록이 무엇인지 정의하고 저장하는 기반 구축
+
+### 1.1 모노레포 초기화
+
+```
+파일: package.json, pnpm-workspace.yaml, turbo.json, tsconfig.base.json
+의존성: 없음
+```
+
+- 루트 `package.json` (`"private": true`)
+- pnpm workspace: `packages/*`
+- turborepo: build/test/lint 태스크
+- 공유 tsconfig: strict 모드, ESNext, Node 모듈 해석
+
+### 1.2 block-schema 패키지
+
+```
+위치: packages/block-schema/src/
+파일: schema.ts, types.ts, validate.ts, index.ts
+의존성: 1.1
+```
+
+Zod 스키마 정의:
+- `Block`: id, name, slug, description, version, teamId, status 등
+- `PromptTemplate`: template, variables, output_format
+- `ModelConfig`: modelId, temperature, maxTokens
+- `QualityGate`: name, type, criteria, failAction
+- `Convention`: name, description, examples
+- `BlockDefinition`: 위 전체를 조합한 루트 스키마
+
+YAML 직렬화/역직렬화 유틸리티 포함.
+
+### 1.3 block-store 패키지
+
+```
+위치: packages/block-store/src/
+파일: db/schema.ts, db/migrations/, repository.ts, versioning.ts, analytics.ts
+의존성: 1.2
+```
+
+- Drizzle ORM 테이블: blocks, block_versions, block_executions, teams
+- `BlockRepository`: create, findById, findBySlug, findByTeam, update, archive, search
+- `VersionManager`: createVersion, getVersionHistory, rollbackToVersion, diffVersions
+- `AnalyticsTracker`: recordExecution, getBlockUsageStats, getTeamUsageStats
+- SQLite (dev), PostgreSQL (prod)
+
+### 1.4 Phase 1 테스트
+
+```
+위치: packages/block-schema/__tests__/, packages/block-store/__tests__/
+```
+
+- 블록 스키마 검증 (유효/무효)
+- YAML 라운드트립
+- CRUD 작업
+- 버전 관리
+- 팀 격리 (A팀 블록이 B팀에 안 보임)
+
+### Phase 1 완료 기준
+
+- [ ] `pnpm install && pnpm build` 성공
+- [ ] 블록 YAML을 스키마로 검증, 명확한 에러 메시지
+- [ ] 블록 CRUD + 버전 관리 동작
+- [ ] 실행 분석 기록 및 조회
+- [ ] 모든 테스트 통과
+- [ ] 참조용 샘플 블록 YAML 파일 존재
+
+---
+
+## 4. Phase 2: Harness (4-5일)
+
+> 블록을 Claude Code CLI로 실행하고 품질을 보장하는 래퍼
+
+### 2.1 ClaudeExecutor
+
+```
+파일: packages/harness/src/executor.ts
+```
+
+- `claude -p --output-format stream-json` child process 생성
+- stream-json 파싱 (line-by-line JSON)
+- `--model` 블록 설정 전달
+- `--session-id` 세션 지속
+- 타임아웃 (예상 시간 x3)
+- EventEmitter 기반 스트리밍 이벤트
+
+### 2.2 ContextInjector
+
+```
+파일: packages/harness/src/context-injector.ts
+```
+
+- `{{변수}}` 치환
+- 컨벤션 주입 (시스템 프롬프트 "Rules" 섹션)
+- 이전 블록 산출물 주입 (블록 체이닝)
+- 출력 포맷 지시 추가
+- 디버그 모드 (조립된 프롬프트만 출력)
+
+### 2.3 QualityGateValidator
+
+```
+파일: packages/harness/src/quality-gate.ts
+```
+
+게이트 유형별 구현:
+- `contains`: 문자열 포함 여부
+- `regex`: 정규식 매칭
+- `json_schema`: JSON Schema 검증
+- `custom_prompt`: AI에게 검증 요청
+- `length`: 길이 범위
+- `code_parseable`: 코드 파싱 시도
+
+### 2.4 SelfHealer
+
+```
+파일: packages/harness/src/self-healer.ts
+```
+
+재시도 전략:
+1. Prompt Enhancement: 실패 피드백 포함 재실행
+2. Model Upgrade: Sonnet → Opus
+3. Prompt Restructure: 복잡한 프롬프트를 단계별로 분할
+
+제한: 최대 3회, 비용 2x 상한
+
+### 2.5 OutputNormalizer
+
+```
+파일: packages/harness/src/output-normalizer.ts
+```
+
+- 구조화 데이터 추출 (코드 블록, JSON, 파일 경로)
+- 대화형 잡담 제거 ("Sure, here's..." 등)
+- 실행 요약 생성
+- `NormalizedOutput`: { raw, cleaned, structured, summary, artifacts[] }
+
+### 2.6 BlockHarness (통합)
+
+```
+파일: packages/harness/src/index.ts
+```
+
+`execute(block, input, context)`:
+컨텍스트 주입 → 실행 → 품질 검증 → (실패 시 자가회복) → 정규화 → 분석 기록
+
+### Phase 2 완료 기준
+
+- [ ] 블록을 CLI로 실행하고 결과 스트리밍
+- [ ] 템플릿 변수 정상 주입
+- [ ] 품질 게이트 동작 (regex, contains, json-schema)
+- [ ] 실패 시 프롬프트 보강 재시도
+- [ ] 산출물 정규화
+- [ ] dry-run 모드
+- [ ] 모든 테스트 통과
+
+---
+
+## 5. Phase 3: Matching Engine (3-4일)
+
+> 자연어 → 최적 블록 매칭
+
+### 3.1 IntentClassifier
+
+```
+파일: packages/matching-engine/src/classifier.ts
+```
+
+- Claude API tool_use로 구조화된 의도 추출
+- 결과: { category, action, entities, constraints, confidence }
+- LRU 캐시
+- 모호한 의도는 복수 분류 반환
+
+### 3.2 VectorMatcher
+
+```
+파일: packages/matching-engine/src/matcher.ts
+```
+
+- vectra 로컬 벡터 DB
+- 블록 생성/수정 시 임베딩 생성 및 저장
+- 쿼리 시 입력 임베딩 → top-K 유사 블록 반환
+- 팀별 벡터 인덱스 격리
+
+### 3.3 ConfidenceRanker
+
+```
+파일: packages/matching-engine/src/ranker.ts
+```
+
+점수 공식:
+```
+score = (0.4 * classifierCategoryMatch)
+      + (0.3 * vectorSimilarity)
+      + (0.2 * triggerPhraseMatch)
+      + (0.1 * recentUsageBoost)
+```
+
+임계값:
+- >= 0.8: 자동 실행
+- 0.5 ~ 0.8: 확인 요청 ("DB 설계 블록을 실행할까요?")
+- < 0.5: 매칭 실패
+
+### Phase 3 완료 기준
+
+- [ ] 자연어 → 블록 매칭 + 신뢰도 점수
+- [ ] 모호한 입력 → 확인 프롬프트 + 대안 제시
+- [ ] 낮은 신뢰도 → "매칭 실패" + 블록 생성 제안
+- [ ] 명시적 참조 (`block:slug`) 바이패스
+- [ ] 팀 격리
+- [ ] 모든 테스트 통과
+
+---
+
+## 6. Phase 4: Block Creator (3-4일)
+
+> AI와 대화로 블록 생성
+
+### 4.1 CreatorConversation
+
+```
+파일: packages/block-creator/src/conversation.ts
+```
+
+대화 상태 머신:
+```
+INTENT → PROMPT_DESIGN → QUALITY_GATES → CONVENTIONS → TEST_RUN → FINALIZE
+```
+
+- 각 상태별 진입 프롬프트, 검증, 전이 로직
+- 비선형 점프 지원 ("프롬프트 다시 수정할게")
+- 세션 직렬화 (재개 가능)
+
+### 4.2 BlockBuilder
+
+```
+파일: packages/block-creator/src/block-builder.ts
+```
+
+- 점진적 블록 조립
+- AI 추천 기본값 (모델, 품질 게이트)
+- 실시간 YAML 프리뷰 생성
+- 단계별 검증
+
+### 4.3 BlockTester
+
+```
+파일: packages/block-creator/src/block-tester.ts
+```
+
+- 샘플 입력으로 테스트 실행
+- 품질 게이트 결과 표시
+- 실패 시 AI가 개선 제안
+- 다수 테스트 케이스 지원
+- 버전 간 회귀 테스트
+
+### Phase 4 완료 기준
+
+- [ ] 대화로 블록 생성 완료
+- [ ] AI가 품질 게이트/모델/컨벤션 제안
+- [ ] 저장 전 테스트 실행
+- [ ] 실패 시 개선 제안
+- [ ] 생성된 YAML이 유효하고 가독성 좋음
+- [ ] 모든 테스트 통과
+
+---
+
+## 7. Phase 5: API + CLI (4-5일)
+
+> 모든 기능을 REST API와 CLI로 노출
+
+### 5.1-5.5 Fastify API 서버
+
+```
+위치: packages/api/
+```
+
+엔드포인트:
+- `POST/GET/PUT/DELETE /api/blocks` — 블록 CRUD
+- `POST /api/execute` — 블록 실행 (SSE 스트리밍)
+- `POST /api/creator/start|message|test|save` — 블록 생성 대화
+- `GET /api/analytics/*` — 분석
+
+인증: 팀 API 키 (Bearer), 100 req/min rate limit
+
+### 5.6 CLI (`vf` 명령어)
+
+```
+위치: packages/cli/
+```
+
+- `vf serve` — API 서버 시작
+- `vf execute "자연어"` — 매칭 + 실행
+- `vf blocks list|show|create|import|export`
+- `vf config set team-key <key>`
+
+### Phase 5 완료 기준
+
+- [ ] `vf serve`로 서버 시작 (포트 3000)
+- [ ] API로 블록 CRUD 동작
+- [ ] `vf execute "자연어"` → 블록 매칭 + 스트리밍 출력
+- [ ] 블록 생성 대화 API 동작
+- [ ] API 키 인증 + rate limiting
+- [ ] 분석 API 데이터 반환
+- [ ] 모든 테스트 통과
+
+---
+
+## 8. Phase 6: Creator Web UI (5-6일)
+
+> 블록 Creator 전용 대시보드
+
+### 6.1-6.6 Next.js 웹 앱
+
+```
+위치: packages/web/
+```
+
+페이지:
+- `/blocks` — 블록 목록 (카드 그리드, 검색, 필터)
+- `/blocks/:id` — 블록 상세 (개요, YAML 에디터, 버전, 분석, 테스트)
+- `/blocks/new` — 대화형 생성 (좌: 채팅, 우: 라이브 YAML 프리뷰)
+- `/analytics` — 팀 분석 대시보드
+- `/settings` — 팀 설정, API 키 관리
+
+기술: Next.js 14 + shadcn/ui + recharts (차트) + Monaco Editor (YAML)
+
+### Phase 6 완료 기준
+
+- [ ] 블록 목록 + 검색/필터
+- [ ] 블록 상세 (전체 탭 동작)
+- [ ] 대화형 생성 + 라이브 YAML 프리뷰
+- [ ] 분석 대시보드 차트
+- [ ] 설정 페이지 (API 키, 팀 설정)
+- [ ] 프론트엔드 테스트 통과
+
+---
+
+## 9. Phase 7: Integration (3-4일)
+
+> Claude Code 네이티브 채널과 연결
+
+### 7.1 CLAUDE.md 통합
+
+```
+파일: /Users/han/develop/AI-Agent/CLAUDE.md
+```
+
+Claude Code가 자동으로 읽는 CLAUDE.md에 Vibe Flow 연동 지시를 작성.
+텔레그램/디스코드 Channels 세션에서도 동일하게 동작.
+
+### 7.2 채널 어댑터
+
+```
+파일: packages/harness/src/channel-adapter.ts
+```
+
+채널별 산출물 포맷팅 (텔레그램: 간결, 디스코드: 임베드, 웹: 풀 마크다운)
+
+### 7.3 세션 매니저
+
+```
+파일: packages/harness/src/session-manager.ts
+```
+
+연속 블록 실행 간 컨텍스트 유지. 이전 블록 산출물 자동 참조.
+
+### Phase 7 완료 기준
+
+- [ ] CLAUDE.md로 Claude Code가 Vibe Flow 우선 호출
+- [ ] 채널별 포맷팅 동작
+- [ ] 연속 블록 실행 간 컨텍스트 유지
+- [ ] 텔레그램 → 블록 매칭 → 실행 → 응답 E2E 동작
+
+---
+
+## 10. 리스크 및 완화
+
+| 리스크 | 심각도 | 완화 |
+|--------|--------|------|
+| CLAUDE.md 지시 따르기 불확실 | 높음 | 명확한 지시 + `/vibeflow` 폴백 커맨드 |
+| Claude Code CLI 인터페이스 변경 | 높음 | ClaudeExecutor 추상화로 격리 |
+| 품질 게이트 오탐 | 중간 | warn 모드 기본, Creator가 조정 |
+| 재시도 비용 폭발 | 중간 | 최대 3회, 2x 상한, 일일 한도 |
+| 잘못된 블록 매칭 | 중간 | 신뢰도 임계값 + 확인 단계 |
+| 대화형 생성 품질 | 중간 | 테스트 필수, AI 품질게이트 제안 |
+| 임베딩 모델 가용성 | 낮음 | transformers.js 로컬 폴백 |
+
+---
+
+## 11. 타임라인
+
+| Phase | 소요 | 시작 조건 |
+|-------|------|----------|
+| Phase 1: Foundation | 3-4일 | 즉시 |
+| Phase 2: Harness | 4-5일 | Phase 1 |
+| Phase 3: Matching | 3-4일 | Phase 1 (2와 병렬) |
+| Phase 4: Creator | 3-4일 | Phase 1 (2,3과 병렬) |
+| Phase 5: API + CLI | 4-5일 | Phase 1-4 |
+| Phase 6: Web UI | 5-6일 | Phase 5 |
+| Phase 7: Integration | 3-4일 | Phase 5-6 |
+| **합계** | **~4-5주** | 병렬 시 ~3주 |
+
+---
+
+## 12. 성공 기준 (전체)
+
+- [ ] Creator가 AI 대화로 5분 안에 블록 생성
+- [ ] 팀원이 텔레그램에서 "DB 설계해줘" → 블록 자동 매칭 & 실행
+- [ ] **같은 요청, 다른 사람 → 같은 품질** (표준화 달성)
+- [ ] 블록이 버전 관리되고 시간에 따라 개선됨
+- [ ] Claude Code를 대체하지 않고 강화
+- [ ] 커스텀 봇 코드 없이 Claude Code Channels로 메시징 처리
