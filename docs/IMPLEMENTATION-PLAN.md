@@ -34,9 +34,9 @@ Phase 4: Block Creator ── (병렬 가능) ───┘
 | API | Fastify | 고성능, 스키마 검증 내장, TS 우선 |
 | 웹 UI | Next.js 14 (App Router) | RSC, 좋은 DX |
 | UI 컴포넌트 | shadcn/ui | 깔끔, 커스터마이징 용이 |
-| DB | SQLite (dev) → PostgreSQL (prod) | Drizzle ORM으로 양쪽 지원 |
+| DB | SQLite (WAL 모드) | MVP 및 초기 프로덕션. 단일 스키마 유지 |
 | ORM | Drizzle ORM | 타입 안전, 경량 |
-| 벡터 매칭 | vectra | 로컬 순수 JS 벡터 DB |
+| 매칭 | trigger_phrases 퍼지 매칭 + IntentClassifier(Haiku) 폴백 | 벡터 DB 불필요, 외부 의존 최소화 |
 | 블록 정의 | YAML + Zod 검증 | 가독성, diff 가능, 버전 관리 |
 | CLI 실행 | `claude -p --output-format stream-json` | Claude Code CLI 직접 통합 |
 | 테스트 | Vitest | 빠름, TS 네이티브 |
@@ -203,9 +203,9 @@ YAML 직렬화/역직렬화 유틸리티 포함.
 
 ---
 
-## 5. Phase 3: Matching Engine (3-4일)
+## 5. Phase 3: Matching Engine (1-2일)
 
-> 자연어 → 최적 블록 매칭
+> 자연어 → 최적 블록 매칭 (벡터 매칭 제거로 단순화)
 
 ### 3.1 IntentClassifier
 
@@ -218,16 +218,20 @@ YAML 직렬화/역직렬화 유틸리티 포함.
 - LRU 캐시
 - 모호한 의도는 복수 분류 반환
 
-### 3.2 VectorMatcher
+### 3.2 TriggerMatcher
 
 ```
-파일: packages/matching-engine/src/matcher.ts
+파일: packages/matching-engine/src/trigger-matcher.ts
 ```
 
-- vectra 로컬 벡터 DB
-- 블록 생성/수정 시 임베딩 생성 및 저장
-- 쿼리 시 입력 임베딩 → top-K 유사 블록 반환
-- 팀별 벡터 인덱스 격리
+- trigger_phrases 퍼지 매칭 (1순위, 비용 0, 지연 <1ms)
+- 정규화: 소문자 변환, 조사 제거, 공백 정규화
+- Levenshtein distance + n-gram 유사도
+- 팀별 trigger_phrases 인덱스
+
+> 비판적 검토 결과: 팀당 수십 개 블록에 벡터 DB(vectra)는 과잉 엔지니어링.
+> trigger_phrases 퍼지 매칭 + IntentClassifier 폴백으로 단순화.
+> 벡터 매칭이 필요해지는 시점(블록 100개+)에 도입해도 늦지 않음.
 
 ### 3.3 ConfidenceRanker
 
@@ -237,10 +241,9 @@ YAML 직렬화/역직렬화 유틸리티 포함.
 
 점수 공식:
 ```
-score = (0.4 * classifierCategoryMatch)
-      + (0.3 * vectorSimilarity)
-      + (0.2 * triggerPhraseMatch)
-      + (0.1 * recentUsageBoost)
+score = (0.5 * classifierCategoryMatch)
+      + (0.3 * triggerPhraseMatch)
+      + (0.2 * recentUsageBoost)
 ```
 
 임계값:
@@ -432,6 +435,9 @@ Claude Code가 자동으로 읽는 CLAUDE.md에 Vibe Flow 연동 지시를 작�
 | 잘못된 블록 매칭 | 중간 | 신뢰도 임계값 + 확인 단계 |
 | 대화형 생성 품질 | 중간 | 테스트 필수, AI 품질게이트 제안 |
 | 임베딩 모델 가용성 | 낮음 | transformers.js 로컬 폴백 |
+| Channels Research Preview 구문 변경 | 중간 | 훅 기반 확정적 통합으로 Channels 의존도 최소화 |
+| Drizzle SQLite↔PostgreSQL 스키마 비호환 | 중간 | MVP는 SQLite 단일 타겟, 프로덕션 전환 시 스키마 마이그레이션 별도 수행 |
+| Voyage AI API 의존 | 낮음 | transformers.js 로컬 폴백, 임베딩 어댑터 추상화 |
 
 ---
 
@@ -441,12 +447,15 @@ Claude Code가 자동으로 읽는 CLAUDE.md에 Vibe Flow 연동 지시를 작�
 |-------|------|----------|
 | Phase 1: Foundation | 3-4일 | 즉시 |
 | Phase 2: Harness | 4-5일 | Phase 1 |
-| Phase 3: Matching | 3-4일 | Phase 1 (2와 병렬) |
+| Phase 3: Matching | 1-2일 | Phase 1 (2와 병렬, 벡터 매칭 제거로 단축) |
 | Phase 4: Creator | 3-4일 | Phase 1 (2,3과 병렬) |
 | Phase 5: API + CLI | 4-5일 | Phase 1-4 |
 | Phase 6: Web UI | 5-6일 | Phase 5 |
 | Phase 7: Integration | 3-4일 | Phase 5-6 |
 | **합계** | **~4-5주** | 병렬 시 ~3주 |
+
+> 비판적 검토 참고: 위 일정은 AI 코딩 활용을 전제한 낙관적 산정.
+> 1인 개발 시 현실적으로 6-8주, 보수적으로 8-12주 소요 가능.
 
 ---
 
@@ -457,4 +466,6 @@ Claude Code가 자동으로 읽는 CLAUDE.md에 Vibe Flow 연동 지시를 작�
 - [ ] **같은 요청, 다른 사람 → 같은 품질** (표준화 달성)
 - [ ] 블록이 버전 관리되고 시간에 따라 개선됨
 - [ ] Claude Code를 대체하지 않고 강화
+- [ ] 최소 3개 실제 팀 시나리오에서 블록 워크플로우 수요 검증
+- [ ] 동시 3명 이상의 팀원이 병렬로 블록 실행 가능
 - [ ] 커스텀 봇 코드 없이 Claude Code Channels로 메시징 처리

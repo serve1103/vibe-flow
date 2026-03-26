@@ -58,6 +58,9 @@ Vibe Flow가 구현하지 않는 영역. Claude Code의 네이티브 기능을 �
 | 세션 관리 | `--session-id`, `--resume` | 작업 연속성 유지 |
 | 보안 | sender allowlist | 승인된 사용자만 접근 |
 
+> **참고**: Channels는 Research Preview 상태 (v2.1.80+). 구문이 변경될 수 있음.
+> Remote Control은 v2.1.51+ 필요. 양쪽 모두 claude.ai OAuth 인증 필수 (API 키 불가).
+
 ### 2.2 블록 매칭 엔진
 
 사용자의 자연어 입력을 받아 가장 적합한 블록을 찾는 엔진.
@@ -69,12 +72,12 @@ Vibe Flow가 구현하지 않는 영역. Claude Code의 네이티브 기능을 �
   1. 의도 분류 (Intent Classifier)
      → { category: "database", action: "design", confidence: 0.92 }
 
-  2. 벡터 매칭 (Vector Matcher)
-     → 블록 임베딩과 입력 임베딩의 유사도 계산
-     → top-5 후보 반환
+  2. 트리거 문구 퍼지 매칭 (Trigger Matcher)
+     → 블록의 trigger_phrases와 입력의 퍼지 매칭 (정규화, 조사 제거)
+     → 비용 0, 지연 <1ms
 
   3. 신뢰도 랭킹 (Confidence Ranker)
-     → 분류 결과 + 벡터 유사도 + 트리거 문구 + 사용 빈도 종합
+     → 분류 결과 + 트리거 매칭 + 사용 빈도 종합
      → 최종 점수 산출
 
   4. 결정
@@ -89,8 +92,8 @@ Vibe Flow가 구현하지 않는 영역. Claude Code의 네이티브 기능을 �
 
 | 모듈 | 파일 | 역할 |
 |------|------|------|
-| IntentClassifier | `classifier.ts` | Claude API tool_use로 구조화된 의도 추출 |
-| VectorMatcher | `matcher.ts` | vectra 로컬 벡터 DB로 의미 유사도 매칭 |
+| TriggerMatcher | `trigger-matcher.ts` | trigger_phrases 퍼지 매칭 (1순위, 비용 0) |
+| IntentClassifier | `classifier.ts` | Claude API(Haiku) tool_use로 의도 추출 (2순위 폴백) |
 | ConfidenceRanker | `ranker.ts` | 다중 신호 종합 + 임계값 판정 |
 
 ### 2.3 하네스 레이어
@@ -297,6 +300,23 @@ Vibe Flow와 Claude Code의 핵심 연결 지점은 **CLAUDE.md** 파일이다.
 **장점**: 커스텀 봇 코드 불필요. Claude Code가 알아서 Vibe Flow를 호출.
 **리스크**: CLAUDE.md 지시 따르기가 확률적. `/vibeflow` 슬래시 커맨드를 폴백으로 제공.
 
+### 3.1 확정적 통합: UserPromptSubmit 훅 (권장)
+
+CLAUDE.md 지시는 확률적이므로, 훅 기반 확정적 통합을 **주 메커니즘**으로 사용한다.
+
+```
+UserPromptSubmit 훅 발동
+     │
+     ├─ vf execute --dry-run '<요청>'
+     │
+     ├─ 매칭 성공 (>= 0.8) → additionalContext로 블록 실행 지시 주입
+     ├─ 매칭 모호 (0.5~0.8) → additionalContext로 확인 질문 주입
+     └─ 매칭 실패 (< 0.5) → 통과 (일반 Claude Code 처리)
+```
+
+**장점**: 100% 확정적 실행 (LLM의 지시 따르기에 의존하지 않음)
+**CLAUDE.md**: 폴백 및 보조 역할로 유지
+
 ---
 
 ## 4. 데이터 흐름
@@ -348,9 +368,8 @@ Vibe Flow와 Claude Code의 핵심 연결 지점은 **CLAUDE.md** 파일이다.
 | 모노레포 | pnpm workspaces + turborepo | 효율적 의존성 관리, 점진적 빌드 |
 | API | Fastify | 고성능, 스키마 검증 내장, TS 친화 |
 | 웹 UI | Next.js 14 (App Router) + shadcn/ui | RSC, 좋은 DX, 접근성 |
-| DB | SQLite (dev) → PostgreSQL (prod) | 로컬 무설정 → 프로덕션 확장 |
-| ORM | Drizzle ORM | 타입 안전, 경량, SQLite+PG 양쪽 지원 |
-| 벡터 DB | vectra | 로컬 순수 JS 벡터 DB, 외부 인프라 불필요 |
+| DB | SQLite (WAL 모드) | MVP 및 초기 프로덕션. 동시 쓰기 경합 시 비동기 배치 처리 |
+| ORM | Drizzle ORM | 타입 안전, 경량. SQLite 단일 스키마 |
 | 검증 | Zod | 런타임 타입 체크, 스키마 우선 |
 | 테스트 | Vitest | 빠름, TS 네이티브 |
 | CLI 실행 | child_process → `claude -p` | Claude Code CLI 직접 통합 |

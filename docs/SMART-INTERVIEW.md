@@ -207,6 +207,11 @@ Claude → 사용자:
 }
 ```
 
+> 훅 출력 형식은 Claude Code 공식 스펙을 따른다:
+> - exit 0: 성공 (stdout JSON 파싱)
+> - exit 2: 차단 (stderr를 에러 메시지로 사용)
+> - 기타 exit code: 비차단 에러 (계속 진행)
+
 ### 5.2 훅 스크립트
 
 ```bash
@@ -248,6 +253,7 @@ fi
 ANALYSIS=$(claude -p \
   --model claude-haiku-4-5-20251001 \
   --max-turns 1 \
+  --max-budget-usd 0.01 \
   --output-format json \
   <<EOF
 당신은 프로젝트 컨텍스트를 기반으로 사용자 프롬프트의 충분성을 판단합니다.
