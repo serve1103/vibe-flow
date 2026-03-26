@@ -110,7 +110,7 @@ JSON으로만 응답:
 | `crypto` | 안전하지 않은 암호화 | MD5, SHA1 사용 |
 | `path_traversal` | 경로 탐색 공격 | `../` 필터링 없는 파일 접근 |
 
-**기본 설정: injection, secrets, auth_bypass**
+**기본 설정 (하드코딩): injection, secrets, auth_bypass, path_traversal**
 
 ### 4.2 심각도 처리
 
@@ -167,6 +167,9 @@ coding:
 | `route`, `api`, `endpoint`, `controller` | "API 관련 코드가 변경되었습니다. API 문서를 갱신하세요." |
 | `schema`, `model`, `migration`, `table` | "데이터 모델 관련 코드가 변경되었습니다. 모델/스키마 문서를 갱신하세요." |
 | 위에 해당 안 됨 | 문서 갱신 제안 스킵 |
+
+> 제약: 경로 패턴에 매칭되지 않으면 문서 갱신을 제안하지 않는다.
+> 이 경우 체이닝이 3단계에서 정체될 수 있으나, 새 프롬프트 입력 시 chain-step이 리셋되어 해소된다.
 
 ### 6.2 제약
 
@@ -273,6 +276,8 @@ coding:
     enabled: true
     suggest: true
 ```
+
+> Phase 1 한계: 각 기능의 `enabled` 토글만 동작. `severity`, `checks`, `command`, `format`, `auto`, `suggest` 등 세부 설정은 Phase 2에서 구현 예정. 현재는 하드코딩된 기본값을 사용.
 
 ---
 

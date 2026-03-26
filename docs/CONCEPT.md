@@ -225,14 +225,14 @@ devflow-code.sh 발동
 claude -p \
   --model claude-haiku-4-5-20251001 \
   --max-turns 1 \
-  --max-budget-usd 0.01 \
+  --max-budget-usd 0.05 \
   --output-format json \
   "프롬프트"
 
 - claude.ai 인증을 공유하므로 별도 API 키 불필요
 - --max-turns 1로 단일 턴 보장
-- --max-budget-usd 0.01로 비용 제한
-- 호출당 ~$0.001, 지연 ~1-2초
+- --max-budget-usd 0.05로 비용 제한
+- 호출당 ~$0.002, 지연 ~2-5초
 ```
 
 ### 5.6 훅 이벤트별 역할
@@ -304,15 +304,17 @@ coding:
     auto: false            # 제안만 (자동 커밋 아님)
 
   docs:
-    enabled: false         # 기본 비활성
+    enabled: true          # 기본 활성
 
 # 스킵 패턴
 skip:
   prefix: "!"             # !로 시작하면 DevFlow 비활성
-  paths:                   # 이 경로의 파일은 리뷰 스킵
-    - "*.md"
-    - "*.json"
-    - "*.yaml"
+  extensions:              # 이 확장자는 코드 리뷰 스킵
+    - ".md"
+    - ".json"
+    - ".yaml"
+    - ".yml"
+    - ".txt"
 ```
 
 ---
@@ -427,7 +429,7 @@ feat: 이벤트 기반 환불 처리 추가
       "hooks": [{
         "type": "command",
         "command": ".claude/hooks/devflow-code.sh",
-        "timeout": 10
+        "timeout": 30
       }]
     }]
   }
@@ -459,7 +461,7 @@ exit 1
 RESULT=$(claude -p \
   --model claude-haiku-4-5-20251001 \
   --max-turns 1 \
-  --max-budget-usd 0.01 \
+  --max-budget-usd 0.05 \
   --output-format json \
   "프롬프트")
 
@@ -499,9 +501,9 @@ PostToolUse 발동 시:
 
 ### 9.7 비용
 
-- Haiku 호출: ~$0.001/회
-- 기획 모드: 프롬프트당 1회 (~$0.001)
-- 개발 모드: 코드 변경 묶음당 1-2회 (~$0.002)
+- Haiku 호출: ~$0.002/회
+- 기획 모드: 프롬프트당 1회 (~$0.002)
+- 개발 모드: 코드 변경 묶음당 1-2회 (~$0.004)
 
 ---
 
@@ -513,6 +515,7 @@ PostToolUse 발동 시:
 - `devflow-code.sh` — PostToolUse 훅 (개발 모드)
 - `.devflow.yaml` — 설정 파일 스키마 + 기본값
 - `install.sh` — 설치 스크립트 (파일 복사 + settings.json 머지)
+  ※ install.sh 실행 시 .claude/settings.json이 자동 생성됨
 - README.md — 설치/사용 가이드
 
 ### 만들지 않는 것

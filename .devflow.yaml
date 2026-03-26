@@ -4,40 +4,41 @@
 # 기획 모드 설정
 planning:
   enabled: true
-  interview: true         # 빠진 정보 질문
-  critical_review: true   # 비판적 검토
-  doc_update: true        # 문서 갱신 제안
+  interview: true         # 빠진 정보 질문 # (Phase 2) 현재 항상 활성
+  critical_review: true   # 비판적 검토 # (Phase 2) 현재 항상 활성
+  doc_update: true        # 문서 갱신 제안 # (Phase 2) 현재 항상 활성
 
 # 개발 모드 설정
 coding:
   code_review:
     enabled: true
-    severity: high         # high 이상만 보고
+    severity: high         # high 이상만 보고 # (Phase 2) 현재 high 고정
 
   security_review:
     enabled: true
-    checks:
+    checks:                # (Phase 2) 현재 하드코딩
       - injection
       - secrets
       - auth_bypass
 
   test:
     enabled: true
-    suggest: true          # 테스트 작성 제안
+    suggest: true          # 테스트 작성 제안 # (Phase 2)
+    command: "npm test"    # 참고용 # (Phase 2) 현재 미사용
 
   commit:
     enabled: true
-    format: conventional
-    auto: false            # 제안만 (자동 커밋 아님)
+    format: conventional   # (Phase 2) 현재 conventional 고정
+    auto: false            # 제안만 (자동 커밋 아님) # (Phase 2) 현재 항상 false
 
   docs:
     enabled: true
-    suggest: true          # 문서 갱신 제안
+    suggest: true          # 문서 갱신 제안 # (Phase 2)
 
 # 스킵 패턴
 skip:
   prefix: "!"             # !로 시작하면 DevFlow 비활성
-  extensions:              # 이 확장자는 코드 리뷰 스킵
+  extensions:              # (Phase 2) 현재 하드코딩: md,json,yaml,yml,txt,toml,lock,gitignore
     - ".md"
     - ".json"
     - ".yaml"

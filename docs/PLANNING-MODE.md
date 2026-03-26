@@ -179,6 +179,8 @@ planning:
   doc_update: true        # 문서 갱신 제안
 ```
 
+> Phase 1 한계: `enabled` 토글만 동작. `interview`, `critical_review`, `doc_update` 세부 토글은 Phase 2에서 구현 예정.
+
 ---
 
 ## 7. 비용
