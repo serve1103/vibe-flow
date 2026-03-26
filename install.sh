@@ -10,6 +10,19 @@ TARGET_DIR="${1:-.}"
 
 echo "DevFlow 설치 중..."
 
+# HIGH-5: 의존성 체크
+MISSING_DEPS=()
+for dep in jq python3 claude; do
+  if ! command -v "$dep" >/dev/null 2>&1; then
+    MISSING_DEPS+=("$dep")
+  fi
+done
+if [ "${#MISSING_DEPS[@]}" -gt 0 ]; then
+  echo "오류: 다음 의존성이 없습니다: ${MISSING_DEPS[*]}"
+  echo "설치 후 다시 시도하세요."
+  exit 1
+fi
+
 # 디렉토리 생성
 mkdir -p "$TARGET_DIR/.claude/hooks"
 mkdir -p "$TARGET_DIR/.devflow"
@@ -45,7 +58,7 @@ DEVFLOW_HOOKS='{
       "hooks": [{
         "type": "command",
         "command": ".claude/hooks/devflow-code.sh",
-        "timeout": 10
+        "timeout": 30
       }]
     }]
   }
@@ -55,11 +68,11 @@ if [ ! -f "$SETTINGS_FILE" ]; then
   echo "$DEVFLOW_HOOKS" | jq '.' > "$SETTINGS_FILE"
   echo "  settings.json 생성"
 else
-  # 기존 settings.json에 훅 머지
+  # HIGH-3: 기존 devflow 훅 제거 후 머지 (중복 등록 방지)
   EXISTING=$(cat "$SETTINGS_FILE")
   MERGED=$(echo "$EXISTING" | jq --argjson new "$DEVFLOW_HOOKS" '
-    .hooks.UserPromptSubmit = (.hooks.UserPromptSubmit // []) + $new.hooks.UserPromptSubmit |
-    .hooks.PostToolUse = (.hooks.PostToolUse // []) + $new.hooks.PostToolUse
+    .hooks.UserPromptSubmit = ((.hooks.UserPromptSubmit // []) | map(select(.hooks[]?.command | test("devflow") | not))) + $new.hooks.UserPromptSubmit |
+    .hooks.PostToolUse = ((.hooks.PostToolUse // []) | map(select(.hooks[]?.command | test("devflow") | not))) + $new.hooks.PostToolUse
   ' 2>/dev/null || echo "$DEVFLOW_HOOKS")
   echo "$MERGED" | jq '.' > "$SETTINGS_FILE"
   echo "  settings.json 머지 완료"

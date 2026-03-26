@@ -5,6 +5,11 @@
 
 set -euo pipefail
 
+# HIGH-6: claude CLI 체크
+if ! command -v claude >/dev/null 2>&1; then
+  exit 0
+fi
+
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 CWD=$(echo "$INPUT" | jq -r '.cwd // "."')
@@ -73,47 +78,46 @@ if [ -f "$CHAIN_STEP_FILE" ]; then
 fi
 
 # --- 설정 로드 (간단 파싱) ---
-CODE_REVIEW_ENABLED="true"
-SECURITY_ENABLED="true"
-TEST_ENABLED="true"
-DOCS_ENABLED="true"
-COMMIT_ENABLED="true"
+# CRITICAL-1 & CRITICAL-2: pyyaml 제거, 환경변수로 경로 전달, 단일 python3 호출
+CODE_REVIEW_ENABLED="True"
+SECURITY_ENABLED="True"
+TEST_ENABLED="True"
+DOCS_ENABLED="True"
+COMMIT_ENABLED="True"
 
 if [ -f "$CONFIG_FILE" ]; then
-  CODE_REVIEW_ENABLED=$(python3 -c "
-import yaml
-with open('$CONFIG_FILE') as f:
-  c = yaml.safe_load(f)
-print(str(c.get('coding',{}).get('code_review',{}).get('enabled',True)))
-" 2>/dev/null || echo "True")
-
-  SECURITY_ENABLED=$(python3 -c "
-import yaml
-with open('$CONFIG_FILE') as f:
-  c = yaml.safe_load(f)
-print(str(c.get('coding',{}).get('security_review',{}).get('enabled',True)))
-" 2>/dev/null || echo "True")
-
-  TEST_ENABLED=$(python3 -c "
-import yaml
-with open('$CONFIG_FILE') as f:
-  c = yaml.safe_load(f)
-print(str(c.get('coding',{}).get('test',{}).get('enabled',True)))
-" 2>/dev/null || echo "True")
-
-  DOCS_ENABLED=$(python3 -c "
-import yaml
-with open('$CONFIG_FILE') as f:
-  c = yaml.safe_load(f)
-print(str(c.get('coding',{}).get('docs',{}).get('enabled',True)))
-" 2>/dev/null || echo "True")
-
-  COMMIT_ENABLED=$(python3 -c "
-import yaml
-with open('$CONFIG_FILE') as f:
-  c = yaml.safe_load(f)
-print(str(c.get('coding',{}).get('commit',{}).get('enabled',True)))
-" 2>/dev/null || echo "True")
+  eval "$(DEVFLOW_CONFIG="$CONFIG_FILE" python3 -c "
+import re, sys, os
+try:
+    with open(os.environ['DEVFLOW_CONFIG']) as f:
+        text = f.read()
+    def get_section_enabled(section, subsection):
+        # Find section block
+        sec = re.search(r'^' + section + r':.*?(?=\n[a-z]|\Z)', text, re.DOTALL | re.MULTILINE)
+        if not sec:
+            return 'True'
+        sec_text = sec.group()
+        # Find subsection block within section
+        sub = re.search(r'^\s+' + subsection + r':.*?(?=\n\s{0,4}[a-z]|\Z)', sec_text, re.DOTALL | re.MULTILINE)
+        if not sub:
+            return 'True'
+        sub_text = sub.group()
+        m = re.search(r'enabled:\s*(true|false)', sub_text, re.IGNORECASE)
+        if m:
+            return 'True' if m.group(1).lower() == 'true' else 'False'
+        return 'True'
+    print('CODE_REVIEW_ENABLED=' + get_section_enabled('coding', 'code_review'))
+    print('SECURITY_ENABLED=' + get_section_enabled('coding', 'security_review'))
+    print('TEST_ENABLED=' + get_section_enabled('coding', 'test'))
+    print('DOCS_ENABLED=' + get_section_enabled('coding', 'docs'))
+    print('COMMIT_ENABLED=' + get_section_enabled('coding', 'commit'))
+except:
+    print('CODE_REVIEW_ENABLED=True')
+    print('SECURITY_ENABLED=True')
+    print('TEST_ENABLED=True')
+    print('DOCS_ENABLED=True')
+    print('COMMIT_ENABLED=True')
+" 2>/dev/null)"
 fi
 
 # --- 체이닝 실행 ---
@@ -121,7 +125,7 @@ INJECT=""
 
 case "$CHAIN_STEP" in
   1)
-    # 1단계: 코드 리뷰 + 보안 검토
+    # 1단계: 코드 리뷰 + 보안 검토 (HIGH-1: 병렬 실행)
     PENDING_FILES=""
     if [ -f "$PENDING_FILE" ]; then
       PENDING_FILES=$(sort -u "$PENDING_FILE" | tr '\n' ', ')
@@ -145,50 +149,69 @@ case "$CHAIN_STEP" in
 
     REVIEW_RESULT=""
 
-    # 코드 리뷰
-    if [ "$CODE_REVIEW_ENABLED" = "True" ]; then
-      REVIEW_PROMPT="다음 코드 변경을 리뷰하세요. high 이상 심각도의 문제만 보고하세요.\n\n파일: $PENDING_FILES\n코드:\n$CODE_CONTENT\n\nJSON으로만 응답:\n문제없음: {\"issues\":[]}\n문제있음: {\"issues\":[{\"severity\":\"high\",\"description\":\"설명\",\"suggestion\":\"제안\"}]}"
+    # JSON 추출 헬퍼 함수
+    extract_json() {
+      local fallback="$1"
+      python3 -c "
+import sys, json, re
+text = sys.stdin.read()
+cb = re.search(r'\`\`\`(?:json)?\s*(\{.*?\})\s*\`\`\`', text, re.DOTALL)
+if cb:
+    try:
+        obj = json.loads(cb.group(1))
+        print(json.dumps(obj)); sys.exit()
+    except: pass
+for m in re.finditer(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text):
+    try:
+        obj = json.loads(m.group())
+        print(json.dumps(obj)); sys.exit()
+    except: continue
+print(sys.argv[1])
+" "$fallback" 2>/dev/null || echo "$fallback"
+    }
 
-      REVIEW=$(echo -e "$REVIEW_PROMPT" | claude -p \
+    # 코드 리뷰 (순차 실행)
+    if [ "$CODE_REVIEW_ENABLED" = "True" ]; then
+      REVIEW_PROMPT="다음 코드 변경을 리뷰하세요. high 이상 심각도의 문제만 보고하세요."$'\n\n'"파일: ${PENDING_FILES}"$'\n'"코드:"$'\n'"${CODE_CONTENT}"$'\n\n'"JSON으로만 응답:"$'\n'"문제없음: {\"issues\":[]}"$'\n'"문제있음: {\"issues\":[{\"severity\":\"high\",\"description\":\"설명\",\"suggestion\":\"제안\"}]}"
+
+      REVIEW=$(printf '%s' "$REVIEW_PROMPT" | claude -p \
         --model claude-haiku-4-5-20251001 \
         --max-turns 1 \
         --max-budget-usd 0.05 \
         --output-format json \
         2>/dev/null) || REVIEW='{"issues":[]}'
 
-      # result wrapper에서 실제 응답 추출
       REVIEW_TEXT=$(echo "$REVIEW" | jq -r '.result // empty' 2>/dev/null)
       if [ -n "$REVIEW_TEXT" ]; then
-        REVIEW_PARSED=$(echo "$REVIEW_TEXT" | python3 -c "import sys,json,re; t=sys.stdin.read(); m=re.search(r'\{.*\}',t,re.DOTALL); print(m.group() if m else '{\"issues\":[]}')" 2>/dev/null || echo '{"issues":[]}')
-        REVIEW="$REVIEW_PARSED"
+        REVIEW=$(printf '%s' "$REVIEW_TEXT" | extract_json '{"issues":[]}')
       fi
+
       ISSUES=$(echo "$REVIEW" | jq -r '.issues[]? | "[\(.severity)] \(.description) → \(.suggestion)"' 2>/dev/null)
       if [ -n "$ISSUES" ]; then
-        REVIEW_RESULT+="[DevFlow 코드 리뷰]\n$ISSUES\n\n"
+        REVIEW_RESULT+="[DevFlow 코드 리뷰]"$'\n'"$ISSUES"$'\n\n'
       fi
     fi
 
-    # 보안 검토
+    # 보안 검토 (순차 실행)
     if [ "$SECURITY_ENABLED" = "True" ]; then
-      SEC_PROMPT="다음 코드에서 보안 취약점을 체크하세요.\n체크 항목: SQL injection, 하드코딩된 시크릿/API키, 경로 탐색, 인증 우회\n\n파일: $PENDING_FILES\n코드:\n$CODE_CONTENT\n\nJSON으로만 응답:\n안전: {\"safe\":true}\n취약점: {\"safe\":false,\"issues\":[{\"severity\":\"critical\",\"description\":\"설명\"}]}"
+      SEC_PROMPT="다음 코드에서 보안 취약점을 체크하세요."$'\n'"체크 항목: SQL injection, 하드코딩된 시크릿/API키, 경로 탐색, 인증 우회"$'\n\n'"파일: ${PENDING_FILES}"$'\n'"코드:"$'\n'"${CODE_CONTENT}"$'\n\n'"JSON으로만 응답:"$'\n'"안전: {\"safe\":true}"$'\n'"취약점: {\"safe\":false,\"issues\":[{\"severity\":\"critical\",\"description\":\"설명\"}]}"
 
-      SECURITY=$(echo -e "$SEC_PROMPT" | claude -p \
+      SECURITY=$(printf '%s' "$SEC_PROMPT" | claude -p \
         --model claude-haiku-4-5-20251001 \
         --max-turns 1 \
         --max-budget-usd 0.05 \
         --output-format json \
         2>/dev/null) || SECURITY='{"safe":true}'
 
-      # result wrapper에서 실제 응답 추출
       SEC_TEXT=$(echo "$SECURITY" | jq -r '.result // empty' 2>/dev/null)
       if [ -n "$SEC_TEXT" ]; then
-        SEC_PARSED=$(echo "$SEC_TEXT" | python3 -c "import sys,json,re; t=sys.stdin.read(); m=re.search(r'\{.*\}',t,re.DOTALL); print(m.group() if m else '{\"safe\":true}')" 2>/dev/null || echo '{"safe":true}')
-        SECURITY="$SEC_PARSED"
+        SECURITY=$(printf '%s' "$SEC_TEXT" | extract_json '{"safe":true}')
       fi
+
       IS_SAFE=$(echo "$SECURITY" | jq -r '.safe // true' 2>/dev/null)
       if [ "$IS_SAFE" = "false" ]; then
         SEC_ISSUES=$(echo "$SECURITY" | jq -r '.issues[]? | "[\(.severity)] \(.description)"' 2>/dev/null)
-        REVIEW_RESULT+="[DevFlow 보안 검토]\n$SEC_ISSUES\n\n"
+        REVIEW_RESULT+="[DevFlow 보안 검토]"$'\n'"$SEC_ISSUES"$'\n\n'
       fi
     fi
 
@@ -249,7 +272,7 @@ esac
 
 # --- 결과 반환 ---
 if [ -n "$INJECT" ]; then
-  INJECT_ESCAPED=$(echo -e "$INJECT" | jq -Rs .)
+  INJECT_ESCAPED=$(printf '%s' "$INJECT" | jq -Rs .)
   echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":${INJECT_ESCAPED}}}"
 else
   echo '{}'

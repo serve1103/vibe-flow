@@ -5,6 +5,11 @@
 
 set -euo pipefail
 
+# HIGH-6: claude CLI 체크
+if ! command -v claude >/dev/null 2>&1; then
+  exit 0
+fi
+
 INPUT=$(cat)
 PROMPT=$(echo "$INPUT" | jq -r '.prompt // empty')
 CWD=$(echo "$INPUT" | jq -r '.cwd // "."')
@@ -14,15 +19,27 @@ CONFIG_FILE="$CWD/.devflow.yaml"
 DEVFLOW_DIR="$CWD/.devflow"
 mkdir -p "$DEVFLOW_DIR"
 
+# MEDIUM-2: 새 프롬프트 시작 시 체인 리셋
+echo "1" > "$DEVFLOW_DIR/chain-step"
+> "$DEVFLOW_DIR/pending" 2>/dev/null
+
 # 기획 모드 비활성화 시 통과
+# CRITICAL-1: pyyaml 없이 순수 python3으로 파싱
+# CRITICAL-2: 환경변수로 파일 경로 전달 (shell injection 방지)
 if [ -f "$CONFIG_FILE" ]; then
-  PLANNING_ENABLED=$(python3 -c "
-import yaml, sys
+  PLANNING_ENABLED=$(DEVFLOW_CONFIG="$CONFIG_FILE" python3 -c "
+import re, sys, os
 try:
-  with open('$CONFIG_FILE') as f:
-    c = yaml.safe_load(f)
-  print(c.get('planning', {}).get('enabled', True))
-except: print('True')
+    with open(os.environ['DEVFLOW_CONFIG']) as f:
+        text = f.read()
+    # Simple: check if 'planning:' section has 'enabled: false'
+    planning = re.search(r'planning:.*?(?=\n\S|\Z)', text, re.DOTALL)
+    if planning and re.search(r'enabled:\s*false', planning.group(), re.IGNORECASE):
+        print('False')
+    else:
+        print('True')
+except:
+    print('True')
 " 2>/dev/null || echo "True")
   if [ "$PLANNING_ENABLED" = "False" ]; then
     echo '{}'
@@ -52,18 +69,18 @@ fi
 CONTEXT=""
 
 if [ -f "$CWD/CLAUDE.md" ]; then
-  CONTEXT+="## CLAUDE.md\n$(head -50 "$CWD/CLAUDE.md")\n\n"
+  CONTEXT+="## CLAUDE.md"$'\n'"$(head -50 "$CWD/CLAUDE.md")"$'\n\n'
 fi
 
 # docs/ 파일 목록
 if [ -d "$CWD/docs" ]; then
   DOCS_LIST=$(ls "$CWD/docs"/*.md 2>/dev/null | xargs -I{} basename {} | tr '\n' ', ')
-  CONTEXT+="## docs/ 파일 목록\n$DOCS_LIST\n\n"
+  CONTEXT+="## docs/ 파일 목록"$'\n'"$DOCS_LIST"$'\n\n'
   # 각 파일의 제목(첫 줄)만 수집
   for f in "$CWD/docs"/*.md; do
-    [ -f "$f" ] && CONTEXT+="- $(basename "$f"): $(head -1 "$f")\n"
+    [ -f "$f" ] && CONTEXT+="- $(basename "$f"): $(head -1 "$f")"$'\n'
   done
-  CONTEXT+="\n"
+  CONTEXT+=$'\n'
 fi
 
 # Haiku에게 분석 요청
@@ -83,9 +100,11 @@ JSON으로만 응답:
 PROMPT_END
 )
 
-FULL_PROMPT="$(echo -e "$HAIKU_PROMPT")\n\n## 프로젝트 컨텍스트\n$(echo -e "$CONTEXT")\n\n## 사용자 프롬프트\n$PROMPT"
+# HIGH-4: printf 사용으로 echo -e 대체
+FULL_PROMPT=$(printf '%s\n\n## 프로젝트 컨텍스트\n%s\n\n## 사용자 프롬프트\n%s' \
+  "$HAIKU_PROMPT" "$CONTEXT" "$PROMPT")
 
-ANALYSIS=$(echo -e "$FULL_PROMPT" | claude -p \
+ANALYSIS=$(printf '%s' "$FULL_PROMPT" | claude -p \
   --model claude-haiku-4-5-20251001 \
   --max-turns 1 \
   --max-budget-usd 0.05 \
@@ -96,20 +115,26 @@ ANALYSIS=$(echo -e "$FULL_PROMPT" | claude -p \
 # claude -p --output-format json은 result wrapper를 반환하므로 .result에서 실제 응답 추출
 RESULT_TEXT=$(echo "$ANALYSIS" | jq -r '.result // empty' 2>/dev/null)
 if [ -n "$RESULT_TEXT" ]; then
-  # result 텍스트에서 JSON 추출 (여러 줄, 마크다운 코드블록 포함 대응)
-  PARSED=$(echo "$RESULT_TEXT" | python3 -c "
+  # CRITICAL-3: 비탐욕 JSON 추출 (마크다운 코드블록 + 중첩 JSON 대응)
+  PARSED=$(printf '%s' "$RESULT_TEXT" | python3 -c "
 import sys, json, re
 text = sys.stdin.read()
-# 마크다운 코드블록 안의 JSON 추출
-m = re.search(r'\{.*\}', text, re.DOTALL)
-if m:
+# Try markdown code block first
+cb = re.search(r'\`\`\`(?:json)?\s*(\{.*?\})\s*\`\`\`', text, re.DOTALL)
+if cb:
+    try:
+        obj = json.loads(cb.group(1))
+        print(json.dumps(obj))
+        sys.exit()
+    except: pass
+# Try all { ... } candidates
+for m in re.finditer(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text):
     try:
         obj = json.loads(m.group())
         print(json.dumps(obj))
-    except:
-        print('{\"mode\":\"pass\"}')
-else:
-    print('{\"mode\":\"pass\"}')
+        sys.exit()
+    except: continue
+print('{\"mode\":\"pass\"}')
 " 2>/dev/null || echo '{"mode":"pass"}')
   ANALYSIS="$PARSED"
 fi
@@ -118,7 +143,6 @@ MODE=$(echo "$ANALYSIS" | jq -r '.mode // "pass"' 2>/dev/null || echo "pass")
 if [ "$MODE" = "pass" ]; then
   # 개발 모드 — 통과
   echo "coding" > "$DEVFLOW_DIR/mode"
-  echo "1" > "$DEVFLOW_DIR/chain-step"
   echo '{}'
   exit 0
 fi
@@ -131,23 +155,23 @@ MISSING=$(echo "$ANALYSIS" | jq -r '.missing[]? // empty' 2>/dev/null | sed 's/^
 CONCERNS=$(echo "$ANALYSIS" | jq -r '.concerns[]? // empty' 2>/dev/null | sed 's/^/  - /')
 
 # additionalContext 조립
-INJECT="[DevFlow 기획 모드] 주제: ${TOPIC}\n\n"
+INJECT="[DevFlow 기획 모드] 주제: ${TOPIC}"$'\n\n'
 
 if [ -n "$MISSING" ]; then
-  INJECT+="## 확인이 필요한 사항\n다음을 사용자에게 질문한 후 진행하세요:\n${MISSING}\n\n"
+  INJECT+="## 확인이 필요한 사항"$'\n'"다음을 사용자에게 질문한 후 진행하세요:"$'\n'"${MISSING}"$'\n\n'
 fi
 
 if [ -n "$CONCERNS" ]; then
-  INJECT+="## 비판적 검토\n다음 우려사항을 고려하세요:\n${CONCERNS}\n\n"
+  INJECT+="## 비판적 검토"$'\n'"다음 우려사항을 고려하세요:"$'\n'"${CONCERNS}"$'\n\n'
 fi
 
-INJECT+="## 요청사항\n"
-INJECT+="1. 위 질문에 대한 답변을 받으세요\n"
-INJECT+="2. 답변을 기반으로 설계를 정리하세요\n"
-INJECT+="3. docs/ 디렉토리에 설계 문서를 작성하세요\n"
+INJECT+="## 요청사항"$'\n'
+INJECT+="1. 위 질문에 대한 답변을 받으세요"$'\n'
+INJECT+="2. 답변을 기반으로 설계를 정리하세요"$'\n'
+INJECT+="3. docs/ 디렉토리에 설계 문서를 작성하세요"$'\n'
 INJECT+="4. 설계가 완료되면 구현 여부를 확인하세요"
 
-INJECT_ESCAPED=$(echo -e "$INJECT" | jq -Rs .)
+INJECT_ESCAPED=$(printf '%s' "$INJECT" | jq -Rs .)
 
 echo "{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":${INJECT_ESCAPED}}}"
 exit 0
