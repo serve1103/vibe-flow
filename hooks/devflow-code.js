@@ -6,6 +6,7 @@ const path = require('path');
 const { loadConfig } = require('./lib/config');
 const { callHaiku } = require('./lib/haiku');
 const { readFile, writeFile, appendFile, readFileLines, limitFileLines } = require('./lib/io');
+const { cleanupStaleState } = require('./lib/cleanup');
 
 let inputData = '';
 process.stdin.setEncoding('utf-8');
@@ -26,6 +27,9 @@ function main(input) {
 
   // Only Write/Edit
   if (toolName !== 'Write' && toolName !== 'Edit') return output({});
+
+  // Cleanup stale state (30min threshold)
+  cleanupStaleState(devflowDir);
 
   fs.mkdirSync(devflowDir, { recursive: true });
 

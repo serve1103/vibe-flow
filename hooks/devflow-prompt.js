@@ -6,6 +6,7 @@ const path = require('path');
 const { loadConfig } = require('./lib/config');
 const { callHaiku } = require('./lib/haiku');
 const { writeFile, removeFile } = require('./lib/io');
+const { runCleanup } = require('./lib/cleanup');
 
 // Read stdin
 let inputData = '';
@@ -23,6 +24,9 @@ function main(input) {
   const prompt = input.prompt || '';
   const cwd = input.cwd || '.';
   const devflowDir = path.join(cwd, '.devflow');
+
+  // Cleanup stale state + orphaned processes
+  runCleanup(cwd);
 
   // Ensure state dir
   fs.mkdirSync(devflowDir, { recursive: true });
