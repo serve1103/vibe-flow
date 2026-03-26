@@ -148,13 +148,12 @@ JSON으로만 응답:
 
 ### 5.2 설정
 
-```yaml
-coding:
-  test:
-    enabled: true
-    suggest: true          # 테스트 작성 제안
-    command: "npm test"    # 참고용 (Claude에게 전달)
+```json
+// .devflow.json
+{ "coding": { "test": { "enabled": true } } }
 ```
+
+> Phase 1: `enabled` 토글만 동작. `suggest`, `command` 세부 설정은 Phase 2.
 
 ---
 
@@ -232,7 +231,7 @@ src/routes/login.ts
 src/models/user.ts
 ```
 
-1단계에서 `sort -u`로 중복 제거 후 Haiku에게 전달. 리뷰 후 초기화.
+1단계에서 JavaScript `Set`으로 중복 제거 후 Haiku에게 전달. 리뷰 후 초기화.
 
 ---
 
@@ -253,7 +252,7 @@ src/models/user.ts
 // .devflow.json
 {
   "coding": {
-    "code_review": { "enabled": true, "severity": "high" },
+    "code_review": { "enabled": true },
     "security_review": { "enabled": true },
     "test": { "enabled": true },
     "commit": { "enabled": true },

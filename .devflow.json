@@ -4,8 +4,7 @@
   },
   "coding": {
     "code_review": {
-      "enabled": true,
-      "severity": "high"
+      "enabled": true
     },
     "security_review": {
       "enabled": true

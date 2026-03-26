@@ -4,7 +4,7 @@ const path = require('path');
 const DEFAULTS = {
   planning: { enabled: true },
   coding: {
-    code_review: { enabled: true, severity: 'high' },
+    code_review: { enabled: true },
     security_review: { enabled: true },
     test: { enabled: true },
     commit: { enabled: true },
@@ -12,7 +12,7 @@ const DEFAULTS = {
   },
   skip: {
     prefix: '!',
-    extensions: ['md','json','yaml','yml','txt','toml','lock','gitignore','env','cfg','ini','csv'],
+    extensions: ['md','json','yaml','yml','txt','toml','lock','env','cfg','ini','csv'],
     filenames: ['.gitignore','.dockerignore','Makefile','Dockerfile','LICENSE'],
     prefixes: ['.env']
   }

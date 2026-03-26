@@ -1,6 +1,6 @@
 {
   "name": "devflow",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Claude Code에 개발 프로세스를 입히는 경량 확장. 코드를 고치면 리뷰, 보안, 테스트, 커밋이 자동으로 따라온다.",
   "author": {
     "name": "serve1103"

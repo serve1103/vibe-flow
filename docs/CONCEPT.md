@@ -283,7 +283,7 @@ PostToolUse 훅에서:
     "enabled": true
   },
   "coding": {
-    "code_review": { "enabled": true, "severity": "high" },
+    "code_review": { "enabled": true },
     "security_review": { "enabled": true },
     "test": { "enabled": true },
     "commit": { "enabled": true },
