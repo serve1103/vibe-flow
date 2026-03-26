@@ -6,7 +6,7 @@ const path = require('path');
 const { loadConfig } = require('./lib/config');
 const { callHaiku } = require('./lib/haiku');
 const { readFile, writeFile, appendFile, readFileLines, limitFileLines } = require('./lib/io');
-const { cleanupStaleState } = require('./lib/cleanup');
+const { cleanupStaleState, checkRecovery } = require('./lib/cleanup');
 
 let inputData = '';
 process.stdin.setEncoding('utf-8');
@@ -32,6 +32,12 @@ function main(input) {
   cleanupStaleState(devflowDir);
 
   fs.mkdirSync(devflowDir, { recursive: true });
+
+  // Recovery: if orphaned processes were killed, restart from step 1
+  if (checkRecovery(devflowDir)) {
+    writeFile(path.join(devflowDir, 'chain-step'), '1');
+    writeFile(path.join(devflowDir, 'pending'), '');
+  }
 
   // Skip if planning mode
   const mode = readFile(path.join(devflowDir, 'mode'));

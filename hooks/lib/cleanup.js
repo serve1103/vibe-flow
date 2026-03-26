@@ -95,9 +95,28 @@ function isStaleProcess(timeStr) {
 
 function runCleanup(cwd) {
   const devflowDir = path.join(cwd, '.devflow');
-  const staleCleared = cleanupStaleState(devflowDir);
+  cleanupStaleState(devflowDir);
   const killed = killOrphanedProcesses();
+
+  // If orphaned processes were killed, mark recovery needed
+  if (killed > 0 && fs.existsSync(devflowDir)) {
+    writeFile(path.join(devflowDir, 'needs-recovery'), String(Date.now()));
+  }
+
   return { killed };
 }
 
-module.exports = { cleanupStaleState, killOrphanedProcesses, runCleanup };
+/**
+ * Check if recovery is needed and consume the flag.
+ * Returns true if a previous cleanup killed orphaned processes.
+ */
+function checkRecovery(devflowDir) {
+  const recoveryFile = path.join(devflowDir, 'needs-recovery');
+  const timestamp = readFile(recoveryFile);
+  if (!timestamp) return false;
+
+  removeFile(recoveryFile);
+  return true;
+}
+
+module.exports = { cleanupStaleState, killOrphanedProcesses, runCleanup, checkRecovery };
