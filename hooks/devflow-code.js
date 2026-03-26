@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// Resolve plugin root (fallback to script directory's parent)
-const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT || require('path').resolve(__dirname, '..');
 const fs = require('fs');
 const path = require('path');
 const { loadConfig } = require('./lib/config');

@@ -49,7 +49,7 @@ Claude Code가 Write 또는 Edit 도구 사용
 ### 3.1 대상
 
 - Write 도구로 작성된 코드 파일의 전체 내용 (최대 200줄)
-- Edit 도구로 수정된 코드의 new_string 부분 (최대 200줄)
+- Edit 도구로 수정된 코드의 변경 전(old_string) + 변경 후(new_string) 전체
 
 ### 3.2 리뷰 기준
 
@@ -241,8 +241,10 @@ src/models/user.ts
 |------|------|-----|
 | `.devflow/mode` | 현재 모드 | `"coding"` (기획 모드면 스킵) |
 | `.devflow/chain-step` | 체이닝 단계 | `1`~`4` (새 프롬프트 시 1로 리셋) |
-| `.devflow/pending` | 디바운싱 변경 파일 목록 | 파일 경로 (줄 단위) |
-| `.devflow/last-change` | 마지막 변경 타임스탬프 | Unix timestamp |
+| `.devflow/pending` | 디바운싱 변경 파일 목록 | 파일 경로 (줄 단위, 최대 100줄) |
+| `.devflow/last-change` | 마지막 변경 타임스탬프 | 밀리초 타임스탬프 |
+| `.devflow/review-targets` | 1단계 리뷰 대상 파일 | 쉼표 구분 파일 경로 (3단계 문서 판단용) |
+| `.devflow/needs-recovery` | 고아 프로세스 복구 플래그 | 타임스탬프 (1회성 소비 후 삭제) |
 
 ---
 

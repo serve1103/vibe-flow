@@ -157,9 +157,10 @@ claude /plugin install ./vibe-flow
     devflow-code.js         # PostToolUse 훅 (개발 모드)
     lib/
       config.js             # 설정 로드 (.devflow.json)
-      haiku.js              # Haiku LLM 호출
+      haiku.js              # Haiku LLM 호출 (실패 시 1회 재시도)
       extract-json.js       # LLM 응답 JSON 추출
       io.js                 # 파일 I/O 유틸리티
+      cleanup.js            # 자원 관리 (스테일 정리 + 고아 프로세스 킬)
 
   .devflow.json             # 프로세스 설정
 ```
@@ -453,20 +454,25 @@ const { execSync } = require('child_process');
 const { extractJson } = require('./extract-json');
 
 function callHaiku(prompt, fallback, options = {}) {
-  // 실패 시 1회 재시도 (MAX_RETRIES=1)
+  const budget = options.budget || 0.05;
+  const retries = options.retries ?? 1;  // MAX_RETRIES=1
+
   for (let attempt = 0; attempt <= retries; attempt++) {
-    const raw = execSync(
-      `claude -p --model claude-haiku-4-5-20251001 `
-      + `--max-turns 1 --max-budget-usd ${budget} --output-format json`,
-      { input: prompt, timeout: 20000, encoding: 'utf-8' }
-    );
-    const wrapper = JSON.parse(raw);
-    const text = wrapper.result || '';    // .result 필드에서 텍스트 추출
-    return extractJson(text, fallback);   // 텍스트에서 JSON 파싱
+    try {
+      const raw = execSync(
+        `claude -p --model claude-haiku-4-5-20251001 `
+        + `--max-turns 1 --max-budget-usd ${budget} --output-format json`,
+        { input: prompt, timeout: 20000, encoding: 'utf-8' }
+      );
+      const wrapper = JSON.parse(raw);
+      const text = wrapper.result || '';    // .result 필드에서 텍스트 추출
+      return extractJson(text, fallback);   // 텍스트에서 JSON 파싱
+    } catch {
+      if (attempt < retries) continue;      // 재시도
+      return fallback;                      // 최종 실패 → fallback 반환
+    }
   }
 }
-
-// 실패 시 1회 재시도 후 fallback 반환 (graceful degradation)
 ```
 
 ### 9.5 모드 상태 관리
@@ -522,9 +528,9 @@ PostToolUse 발동 시:
 
 ### 9.8 비용
 
-- Haiku 호출: ~$0.002/회
-- 기획 모드: 프롬프트당 1회 (~$0.002)
-- 개발 모드: 코드 변경 묶음당 1-2회 (~$0.004)
+- Haiku 호출: ~$0.001-0.002/회
+- 기획 모드: 프롬프트당 1회 (~$0.001-0.002)
+- 개발 모드: 코드 변경 묶음당 1-2회 (~$0.002-0.004)
 
 ---
 
@@ -534,7 +540,7 @@ PostToolUse 발동 시:
 
 - `hooks/devflow-prompt.js` — UserPromptSubmit 훅 (기획 모드)
 - `hooks/devflow-code.js` — PostToolUse 훅 (개발 모드)
-- `hooks/lib/` — 공유 라이브러리 (config, haiku, extract-json, io)
+- `hooks/lib/` — 공유 라이브러리 (config, haiku, extract-json, io, cleanup)
 - `hooks/hooks.json` — 훅 이벤트 등록
 - `.claude-plugin/plugin.json` — 플러그인 매니페스트
 - `.devflow.json` — 설정 파일 (JSON)
