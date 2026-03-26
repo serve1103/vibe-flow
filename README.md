@@ -106,13 +106,23 @@ hooks/
   devflow-code.js         # 개발 모드 (PostToolUse)
   lib/
     config.js             # 설정 로드
-    haiku.js              # Haiku LLM 호출
+    haiku.js              # Haiku LLM 호출 (실패 시 1회 재시도)
     extract-json.js       # LLM 응답 JSON 추출
     io.js                 # 파일 I/O 유틸리티
+    cleanup.js            # 자원 관리 (스테일 정리 + 고아 프로세스 킬)
 
 .devflow.json             # 프로세스 설정 (프로젝트별)
 .devflow/                 # 런타임 상태 (자동 생성, .gitignore 권장)
 ```
+
+## 자원 관리
+
+DevFlow는 매 훅 실행마다 자동으로 자원을 정리합니다:
+
+- **스테일 상태 정리** — `.devflow/` 상태가 30분 이상 경과하면 자동 초기화
+- **고아 프로세스 킬** — 타임아웃된 Haiku 프로세스를 탐지하고 SIGTERM
+- **자동 복구** — 고아 프로세스 킬 후 체이닝을 1단계부터 재실행
+- **Haiku 재시도** — LLM 호출 실패 시 1회 자동 재시도
 
 ## 비용
 

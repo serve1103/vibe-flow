@@ -452,18 +452,21 @@ process.exit(2);
 const { execSync } = require('child_process');
 const { extractJson } = require('./extract-json');
 
-function callHaiku(prompt, fallback) {
-  const raw = execSync(
-    'claude -p --model claude-haiku-4-5-20251001 '
-    + '--max-turns 1 --max-budget-usd 0.05 --output-format json',
-    { input: prompt, timeout: 20000, encoding: 'utf-8' }
-  );
-  const wrapper = JSON.parse(raw);
-  const text = wrapper.result || '';      // .result 필드에서 텍스트 추출
-  return extractJson(text, fallback);     // 텍스트에서 JSON 파싱
+function callHaiku(prompt, fallback, options = {}) {
+  // 실패 시 1회 재시도 (MAX_RETRIES=1)
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const raw = execSync(
+      `claude -p --model claude-haiku-4-5-20251001 `
+      + `--max-turns 1 --max-budget-usd ${budget} --output-format json`,
+      { input: prompt, timeout: 20000, encoding: 'utf-8' }
+    );
+    const wrapper = JSON.parse(raw);
+    const text = wrapper.result || '';    // .result 필드에서 텍스트 추출
+    return extractJson(text, fallback);   // 텍스트에서 JSON 파싱
+  }
 }
 
-// 실패 시 graceful degradation (fallback 반환)
+// 실패 시 1회 재시도 후 fallback 반환 (graceful degradation)
 ```
 
 ### 9.5 모드 상태 관리
@@ -474,6 +477,7 @@ function callHaiku(prompt, fallback) {
 .devflow/last-change     # 마지막 변경 타임스탬프 (밀리초)
 .devflow/chain-step      # 체이닝 현재 단계 (1=리뷰 2=테스트 3=문서 4=커밋)
 .devflow/review-targets  # 1단계에서 저장한 리뷰 대상 파일 (3단계 문서 판단용)
+.devflow/needs-recovery  # 고아 프로세스 킬 후 복구 플래그 (타임스탬프)
 ```
 
 - 기획 모드에서 PostToolUse는 스킵 (.devflow/mode가 "planning"이면)
@@ -494,7 +498,29 @@ PostToolUse 발동 시:
 ※ 첫 번째 편집은 타임스탬프 파일이 없으므로 항상 통과
 ```
 
-### 9.7 비용
+### 9.7 자원 관리 (hooks/lib/cleanup.js)
+
+```
+훅 실행 시 자동으로 자원 관리 수행:
+
+1. 스테일 상태 정리 (cleanupStaleState)
+   - .devflow/last-change가 30분 이상 경과 → 모든 상태 파일 초기화
+   - 실행 시점: 매 UserPromptSubmit, 매 PostToolUse
+
+2. 고아 프로세스 탐지 및 킬 (killOrphanedProcesses)
+   - claude -p --model claude-haiku 프로세스 중 60초 이상 실행 중인 것 탐지
+   - SIGTERM으로 정리
+   - macOS/Linux: ps aux + grep, Windows: wmic
+   - 실행 시점: 매 UserPromptSubmit (runCleanup)
+
+3. 자동 복구 (checkRecovery)
+   - 고아 프로세스 킬 시 .devflow/needs-recovery 플래그 기록
+   - 다음 PostToolUse에서 플래그 감지 → chain-step을 1로 리셋
+   - 플래그 소비 후 삭제 (1회성)
+   - Haiku 호출 실패 시 1회 자동 재시도 (MAX_RETRIES=1)
+```
+
+### 9.8 비용
 
 - Haiku 호출: ~$0.002/회
 - 기획 모드: 프롬프트당 1회 (~$0.002)
