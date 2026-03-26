@@ -40,8 +40,16 @@ fi
 
 EXTENSION="${FILE_PATH##*.}"
 
-# 스킵할 확장자
-SKIP_EXTENSIONS=("md" "json" "yaml" "yml" "txt" "toml" "lock" "gitignore")
+# 스킵할 확장자 및 파일명 (MEDIUM-5: 하드코딩 목록, Phase 2에서 yaml 연동)
+SKIP_EXTENSIONS=("md" "json" "yaml" "yml" "txt" "toml" "lock" "gitignore" "env" "cfg" "ini" "csv")
+SKIP_FILENAMES=(".gitignore" ".dockerignore" "Makefile" "Dockerfile" "LICENSE")
+BASENAME=$(basename "$FILE_PATH")
+for name in "${SKIP_FILENAMES[@]}"; do
+  if [ "$BASENAME" = "$name" ]; then
+    echo '{}'
+    exit 0
+  fi
+done
 for ext in "${SKIP_EXTENSIONS[@]}"; do
   if [ "$EXTENSION" = "$ext" ]; then
     echo '{}'
@@ -49,13 +57,16 @@ for ext in "${SKIP_EXTENSIONS[@]}"; do
   fi
 done
 
-# --- 디바운싱 ---
+# --- 디바운싱 (타임스탬프 비교, macOS/Linux 호환) ---
 PENDING_FILE="$DEVFLOW_DIR/pending"
 TIMESTAMP_FILE="$DEVFLOW_DIR/last-change"
 NOW=$(date +%s)
 
-# 변경 파일 기록
+# 변경 파일 기록 (최대 100개 제한)
 echo "$FILE_PATH" >> "$PENDING_FILE"
+if [ "$(wc -l < "$PENDING_FILE" 2>/dev/null || echo 0)" -gt 100 ]; then
+  tail -100 "$PENDING_FILE" > "$PENDING_FILE.tmp" && mv "$PENDING_FILE.tmp" "$PENDING_FILE"
+fi
 
 if [ -f "$TIMESTAMP_FILE" ]; then
   LAST=$(cat "$TIMESTAMP_FILE")
@@ -136,11 +147,15 @@ case "$CHAIN_STEP" in
       PENDING_FILES="$FILE_PATH"
     fi
 
-    # 코드 내용 수집 (Write의 경우 tool_input.content 사용)
-    CODE_CONTENT=$(echo "$INPUT" | jq -r '.tool_input.content // empty' | head -200)
-    if [ -z "$CODE_CONTENT" ]; then
-      # Edit의 경우 new_string 사용
-      CODE_CONTENT=$(echo "$INPUT" | jq -r '.tool_input.new_string // empty' | head -200)
+    # 코드 내용 수집 (MEDIUM-4: 절단 시 표시 추가)
+    CODE_RAW=$(echo "$INPUT" | jq -r '.tool_input.content // empty')
+    if [ -z "$CODE_RAW" ]; then
+      CODE_RAW=$(echo "$INPUT" | jq -r '.tool_input.new_string // empty')
+    fi
+    TOTAL_LINES=$(echo "$CODE_RAW" | wc -l | tr -d ' ')
+    CODE_CONTENT=$(echo "$CODE_RAW" | head -200)
+    if [ "$TOTAL_LINES" -gt 200 ]; then
+      CODE_CONTENT+=$'\n\n'"... (${TOTAL_LINES}줄 중 200줄만 표시)"
     fi
 
     if [ -z "$CODE_CONTENT" ]; then
@@ -233,26 +248,31 @@ print(sys.argv[1])
     ;;
 
   3)
-    # 3단계: 문서 갱신 제안
+    # 3단계: 문서 갱신 제안 (매칭 안 되면 4단계로 자동 건너뜀)
+    DOC_SUGGEST=""
     if [ "$DOCS_ENABLED" = "True" ]; then
-      # 경로 기반 문서 갱신 판단
-      PENDING_FILES=""
+      PENDING_ALL="$FILE_PATH"
       if [ -f "$PENDING_FILE" ]; then
-        PENDING_FILES=$(cat "$PENDING_FILE" 2>/dev/null)
+        PENDING_ALL+=" $(cat "$PENDING_FILE" 2>/dev/null)"
       fi
-
-      DOC_SUGGEST=""
-      if echo "$FILE_PATH $PENDING_FILES" | grep -qiE "route|api|endpoint|controller"; then
+      if echo "$PENDING_ALL" | grep -qiE "route|api|endpoint|controller"; then
         DOC_SUGGEST="API 관련 코드가 변경되었습니다. API 문서를 갱신하세요."
-      elif echo "$FILE_PATH $PENDING_FILES" | grep -qiE "schema|model|migration|table"; then
+      elif echo "$PENDING_ALL" | grep -qiE "schema|model|migration|table"; then
         DOC_SUGGEST="데이터 모델 관련 코드가 변경되었습니다. 모델/스키마 문서를 갱신하세요."
       fi
-
-      if [ -n "$DOC_SUGGEST" ]; then
-        INJECT="[DevFlow] $DOC_SUGGEST"
-      fi
     fi
-    echo "4" > "$CHAIN_STEP_FILE"
+
+    if [ -n "$DOC_SUGGEST" ]; then
+      INJECT="[DevFlow] $DOC_SUGGEST"
+      echo "4" > "$CHAIN_STEP_FILE"
+    else
+      # 문서 갱신 불필요 → 4단계(커밋)로 바로 건너뜀
+      if [ "$COMMIT_ENABLED" = "True" ]; then
+        INJECT="[DevFlow] 모든 변경이 완료되었으면 커밋하세요. Conventional Commits 형식을 사용하세요."
+      fi
+      echo "1" > "$CHAIN_STEP_FILE"
+      > "$PENDING_FILE" 2>/dev/null
+    fi
     ;;
 
   4)
