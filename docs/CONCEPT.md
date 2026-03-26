@@ -81,15 +81,16 @@ Claude Code는 강력하지만 "시키는 것만 한다"
 ### 3.3 모드 자동 전환
 
 ```
-DevFlow가 프롬프트를 분석해서 모드를 자동 판단:
+DevFlow가 프로젝트 상태를 보고 모드를 판단:
 
-  "~하고 싶어", "~어떻게 생각해?", "설계해줘"
-    → 기획 모드 (인터뷰 + 검토 + 문서)
+  "로그인 기능을 만들고 싶어"
+    → docs/에 로그인 설계 문서가 있나?
+    → 있으면 → 개발 모드 (설계가 있으니 바로 구현)
+    → 없으면 → 기획 모드 (설계부터 시작)
 
-  "고쳐줘", "만들어줘", "수정해", "추가해"
-    → 개발 모드 (리뷰 + 보안 + 테스트 + 커밋)
+  키워드가 아니라 프로젝트 상태로 판단하므로 오판이 없다.
 
-  "!hotfix ~"
+  "!" 접두사
     → 스킵 모드 (DevFlow 비활성, 빠른 수정)
 ```
 
@@ -162,10 +163,12 @@ cp /tmp/devflow/devflow.yaml .devflow.yaml
      ▼
 devflow-prompt.sh 발동
      │
-     ├─ 프롬프트 의도 분석 (키워드 매칭)
-     │   "~하고 싶어", "설계", "어떻게 생각해" → 기획 모드
-     │   "고쳐", "만들어", "수정해" → 통과 (개발 모드는 PostToolUse에서 처리)
-     │   "!" 접두사 → 통과 (스킵 모드)
+     ├─ 프로젝트 상태 기반 모드 판단
+     │   1. "!" 접두사 → 통과 (스킵 모드)
+     │   2. 프롬프트에서 작업 주제 추출 (Haiku)
+     │   3. docs/에서 해당 주제의 설계 문서 검색
+     │      → 설계 문서 있음 → 통과 (개발 모드, PostToolUse에서 처리)
+     │      → 설계 문서 없음 → 기획 모드 발동
      │
      ├─ 기획 모드일 때:
      │   1. 프로젝트 컨텍스트 수집 (CLAUDE.md, docs/, 최근 변경)
@@ -201,15 +204,17 @@ devflow-code.sh 발동
      │   → Haiku: "인젝션, 시크릿 노출 있나?"
      │   → 문제 시 additionalContext로 경고
      │
-     ├─ 테스트/커밋/문서 제안 (활성화 시)
-     │   → additionalContext로 다음을 주입:
-     │     "테스트를 작성하고, 관련 문서를 갱신하고, 커밋하세요"
-     │   → Claude가 자연스럽게 테스트 → 문서 갱신 → 커밋까지 이어감
-     │
-     └─ 문서 갱신 대상 자동 판단
-         → 변경된 코드가 API면 → API 문서 갱신 제안
-         → 변경된 코드가 스키마면 → ERD/모델 문서 갱신 제안
-         → 새 기능이면 → README, CHANGELOG 갱신 제안
+     └─ 후속 작업 체이닝 (한 번에 하나씩)
+         → 1차 PostToolUse: 코드 리뷰 + 보안 검토 결과만 주입
+         → Claude가 수정하면 → 2차 PostToolUse 발동
+         → 2차: "테스트를 작성하세요" 주입
+         → Claude가 테스트 작성하면 → 3차 PostToolUse 발동
+         → 3차: "관련 문서를 갱신하세요" 주입 (경로 기반 판단)
+            (routes/ 변경 → API 문서, schema/ 변경 → 모델 문서)
+         → 4차: "커밋하세요" 주입
+
+         ※ additionalContext는 힌트이므로 한 번에 3가지를 넣으면
+            무시될 수 있다. 한 번에 하나씩 체이닝하면 확실하다.
 ```
 
 ### 5.5 Haiku API 호출 메커니즘
@@ -395,14 +400,108 @@ feat: 이벤트 기반 환불 처리 추가
 
 ---
 
-## 9. 기술 제약
+## 9. 기술 제약 및 구현 명세
 
-- Claude Code v2.1.51+ 필요 (훅 시스템)
-- UserPromptSubmit 훅: additionalContext 주입 가능, 차단 가능
-- PostToolUse 훅: additionalContext 주입 가능, 차단 불가
-- Stop 훅: additionalContext 미지원 → 사용하지 않음
-- Haiku 호출: claude -p 사용, 호출당 ~$0.001, 지연 ~1-2초
-- 디바운싱: 연속 변경 시 마지막 변경 후 5초 대기
+### 9.1 훅 시스템 제약
+
+- Claude Code v2.1.51+ 필요
+- UserPromptSubmit: additionalContext 주입 가능, 차단 가능
+- PostToolUse: additionalContext 주입 가능, 차단 불가
+- Stop: additionalContext 미지원 → 사용하지 않음
+
+### 9.2 훅 등록 (settings.json)
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": ".claude/hooks/devflow-prompt.sh",
+        "timeout": 15
+      }]
+    }],
+    "PostToolUse": [{
+      "matcher": "Write|Edit",
+      "hooks": [{
+        "type": "command",
+        "command": ".claude/hooks/devflow-code.sh",
+        "timeout": 10
+      }]
+    }]
+  }
+}
+```
+
+### 9.3 훅 출력 프로토콜
+
+```bash
+# 통과 (아무것도 하지 않음)
+echo '{}'
+exit 0
+
+# additionalContext 주입
+echo '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"리뷰 결과: ..."}}'
+exit 0
+
+# 차단 (UserPromptSubmit만 가능)
+echo '{"decision":"block","reason":"기획 문서가 필요합니다"}'
+exit 2
+
+# 에러 (무시하고 계속 진행 — graceful degradation)
+exit 1
+```
+
+### 9.4 Haiku 호출 및 응답 파싱
+
+```bash
+RESULT=$(claude -p \
+  --model claude-haiku-4-5-20251001 \
+  --max-turns 1 \
+  --max-budget-usd 0.01 \
+  --output-format json \
+  "프롬프트")
+
+# 실패 시 graceful degradation (에러 무시, 훅 통과)
+if [ $? -ne 0 ]; then
+  echo '{}'
+  exit 0
+fi
+
+# JSON 파싱
+REVIEW=$(echo "$RESULT" | jq -r '.result // empty')
+```
+
+### 9.5 모드 상태 관리
+
+```
+.devflow/mode          # "planning" | "coding" | 파일 없음(기본=auto)
+.devflow/pending       # 디바운싱용 변경 파일 목록
+.devflow/chain-step    # 체이닝 현재 단계 (1=리뷰 2=테스트 3=문서 4=커밋)
+```
+
+- 기획 모드에서 PostToolUse는 스킵 (.devflow/mode가 "planning"이면)
+- 체이닝 단계는 PostToolUse 발동마다 +1 증가, 커밋 후 초기화
+
+### 9.6 디바운싱 (타임스탬프 비교 방식)
+
+```
+PostToolUse 발동 시:
+  1. .devflow/pending에 변경 파일 추가
+  2. .devflow/last-change에 현재 타임스탬프 기록
+  3. 이전 타임스탬프와 비교: 5초 이상 경과했나?
+     → 경과: 누적 변경을 일괄 리뷰 실행
+     → 미경과: 스킵 (누적만)
+
+※ sleep이 아닌 타임스탬프 비교이므로 블로킹 없음
+```
+
+### 9.7 비용
+
+- Haiku 호출: ~$0.001/회
+- 기획 모드: 프롬프트당 1회 (~$0.001)
+- 개발 모드: 코드 변경 묶음당 1-2회 (~$0.002)
 
 ---
 
