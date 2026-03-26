@@ -85,6 +85,9 @@ Vibe Flow가 구현하지 않는 영역. Claude Code의 네이티브 기능을 �
      → 0.5 ~ 0.8: 사용자에게 확인 ("DB 설계 블록을 실행할까요?")
      → < 0.5: 매칭 실패, 일반 Claude Code로 처리
 
+> 비블록 요청(매칭 실패)은 파이프라인을 타지 않고 일반 Claude Code가 직접 처리한다.
+> 매칭 실패 이벤트는 DB에 기록하여 (status: 'unmatched') 신규 블록 추천 데이터로 활용한다.
+
 출력: { block: BlockDefinition, confidence: 0.92, alternatives: [...] }
 ```
 
@@ -147,6 +150,31 @@ Vibe Flow가 구현하지 않는 영역. Claude Code의 네이티브 기능을 �
 | OutputNormalizer | `output-normalizer.ts` | 산출물 정규화 (구조화, 정리, 요약) |
 | BlockHarness | `index.ts` | 위 모듈을 파이프라인으로 조합하는 통합 인터페이스 |
 
+**코드리뷰/보안검토 실패 처리:**
+
+| 심각도 | 처리 | 예시 |
+|--------|------|------|
+| `critical` | 차단 + 원본 코드 + 리뷰 결과 함께 반환 | SQL injection, 하드코딩된 시크릿 |
+| `high` | 경고 배너 + 리뷰 코멘트 첨부, 결과 반환 | XSS 가능성, 부적절한 에러 노출 |
+| `medium` | 리뷰 코멘트 첨부, 결과 반환 | 미사용 변수, 비효율적 쿼리 |
+| `low` | 리뷰 코멘트 첨부, 결과 반환 | 네이밍 컨벤션, 코드 스타일 |
+
+> SelfHealer는 QualityGate 실패에만 동작한다. CodeReviewer/SecurityReviewer의 block 판정은
+> SelfHealer로 넘어가지 않으며, 사용자에게 원본 코드와 리뷰 결과를 함께 반환하여 판단권을 돌려준다.
+> 타깃 패치(Haiku 자동 수정)는 Tier 2에서 검토.
+
+**파이프라인 설정 (PipelineConfig):**
+
+모든 파이프라인 설정값은 `PipelineConfig` 단일 타입에 집중한다.
+
+| 도입 시점 | 설정 방식 | 설명 |
+|----------|----------|------|
+| Tier 1 (MVP) | 코드 내 기본값 | `DEFAULT_PIPELINE_CONFIG` 상수. 변경 시 코드 수정 |
+| Tier 2 | `.vibe-flow/pipeline.yaml` | 파일 존재 시 로드, 없으면 기본값. Git 버전 관리 가능 |
+| Tier 3 | API + 웹 UI | `GET/PUT /api/pipeline-config`. 변경 이력 추적 |
+
+설정 항목: 스테이지 on/off, 심각도 정책, 커스텀 리뷰 규칙 (Tier 3)
+
 ### 2.4 블록 저장소
 
 블록의 CRUD, 버전 관리, 사용 분석을 담당.
@@ -184,7 +212,7 @@ block_executions
 ├── user_id
 ├── input
 ├── output
-├── status (success | failed | retried)
+├── status (success | failed | retried | unmatched)
 ├── quality_gate_results (JSON)
 ├── duration_ms
 ├── tokens_used
