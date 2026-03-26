@@ -1,6 +1,6 @@
 # DevFlow 개발 모드 상세 스펙
 
-> 훅: `devflow-code.sh` (PostToolUse)
+> 훅: `devflow-code.js` (PostToolUse)
 > 목적: 코드가 변경될 때마다 리뷰, 보안, 테스트, 문서, 커밋이 자동으로 따라온다
 
 ---
@@ -80,9 +80,9 @@ JSON으로만 응답:
 
 ### 3.4 Haiku 응답 파싱
 
-1. `claude -p --output-format json`은 result wrapper를 반환
-2. `.result` 필드에서 실제 텍스트 추출
-3. 텍스트에서 JSON 추출 (마크다운 코드블록 우선, non-greedy 매칭)
+1. `claude -p --output-format json`은 `{type:"result", result:"텍스트"}` 래퍼 반환
+2. `.result` 필드에서 실제 텍스트 추출 (hooks/lib/haiku.js)
+3. 텍스트에서 JSON 추출 — 마크다운 코드블록 우선(greedy), 후보 매칭(non-greedy) (hooks/lib/extract-json.js)
 4. `issues` 배열에서 리뷰 결과 조립
 
 ### 3.5 출력 형식
@@ -249,32 +249,17 @@ src/models/user.ts
 
 ## 10. 설정
 
-```yaml
-# .devflow.yaml
-coding:
-  code_review:
-    enabled: true
-    severity: high         # 이 심각도 이상만 보고
-
-  security_review:
-    enabled: true
-    checks:                # 활성화할 체크 항목
-      - injection
-      - secrets
-      - auth_bypass
-
-  test:
-    enabled: true
-    suggest: true
-
-  commit:
-    enabled: true
-    format: conventional
-    auto: false            # 제안만 (자동 커밋 아님)
-
-  docs:
-    enabled: true
-    suggest: true
+```json
+// .devflow.json
+{
+  "coding": {
+    "code_review": { "enabled": true, "severity": "high" },
+    "security_review": { "enabled": true },
+    "test": { "enabled": true },
+    "commit": { "enabled": true },
+    "docs": { "enabled": true }
+  }
+}
 ```
 
 > Phase 1 한계: 각 기능의 `enabled` 토글만 동작. `severity`, `checks`, `command`, `format`, `auto`, `suggest` 등 세부 설정은 Phase 2에서 구현 예정. 현재는 하드코딩된 기본값을 사용.

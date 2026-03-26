@@ -1,6 +1,6 @@
 # DevFlow 기획 모드 상세 스펙
 
-> 훅: `devflow-prompt.sh` (UserPromptSubmit)
+> 훅: `devflow-prompt.js` (UserPromptSubmit)
 > 목적: 코딩 전에 생각을 먼저 정리하게 만든다
 
 ---
@@ -12,7 +12,7 @@
      │
      ├─ "!" 접두사 → 스킵 (DevFlow 비활성)
      ├─ 빈 프롬프트 → 통과
-     ├─ .devflow.yaml에서 planning.enabled: false → 통과
+     ├─ .devflow.json에서 planning.enabled: false → 통과
      │
      └─ Haiku에게 프롬프트 분석 요청
          ├─ docs/에 관련 설계 문서 있음 → 개발 모드 (통과)
@@ -170,13 +170,13 @@ CLAUDE.md: "PostgreSQL, Next.js 사용"
 
 ## 6. 설정
 
-```yaml
-# .devflow.yaml
-planning:
-  enabled: true           # false면 기획 모드 비활성
-  interview: true         # 빠진 정보 질문
-  critical_review: true   # 비판적 검토
-  doc_update: true        # 문서 갱신 제안
+```json
+// .devflow.json
+{
+  "planning": {
+    "enabled": true
+  }
+}
 ```
 
 > Phase 1 한계: `enabled` 토글만 동작. `interview`, `critical_review`, `doc_update` 세부 토글은 Phase 2에서 구현 예정.

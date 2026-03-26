@@ -9,7 +9,7 @@
 
 > **Claude Code에 개발 프로세스를 입히는 경량 확장.**
 > 기획하면 인터뷰+검토가, 코드를 고치면 리뷰+보안+테스트가 자동으로 따라온다.
-> 설치는 파일 복사 3초. 서버 없음. 의존성 없음.
+> 설치는 `plugin install` 한 줄. 서버 없음. Node.js 외 의존성 없음.
 
 ---
 
@@ -135,24 +135,33 @@ Claude Code (기본)          Claude Code + DevFlow
 ### 5.1 설치
 
 ```bash
-git clone https://github.com/user/devflow.git /tmp/devflow
-cp -r /tmp/devflow/hooks/* .claude/hooks/
-cp /tmp/devflow/devflow.yaml .devflow.yaml
+# Claude Code 플러그인으로 설치 (한 줄)
+claude /plugin install github:serve1103/vibe-flow
 
-# 끝. 3초.
+# 또는 로컬 설치
+git clone https://github.com/serve1103/vibe-flow.git
+claude /plugin install ./vibe-flow
 ```
 
 ### 5.2 설치 후 파일
 
 ```
 프로젝트/
-  .claude/
-    hooks/
-      devflow-prompt.sh     # UserPromptSubmit 훅 (기획 모드)
-      devflow-code.sh       # PostToolUse 훅 (개발 모드)
-    settings.json           # 훅 등록
+  .claude-plugin/
+    plugin.json             # 플러그인 매니페스트
+    marketplace.json        # 배포 정의
 
-  .devflow.yaml             # 프로세스 설정
+  hooks/
+    hooks.json              # 훅 이벤트 등록
+    devflow-prompt.js       # UserPromptSubmit 훅 (기획 모드)
+    devflow-code.js         # PostToolUse 훅 (개발 모드)
+    lib/
+      config.js             # 설정 로드 (.devflow.json)
+      haiku.js              # Haiku LLM 호출
+      extract-json.js       # LLM 응답 JSON 추출
+      io.js                 # 파일 I/O 유틸리티
+
+  .devflow.json             # 프로세스 설정
 ```
 
 ### 5.3 기획 모드 동작 (UserPromptSubmit 훅)
@@ -161,7 +170,7 @@ cp /tmp/devflow/devflow.yaml .devflow.yaml
 사용자 프롬프트 입력
      │
      ▼
-devflow-prompt.sh 발동
+devflow-prompt.js 발동
      │
      ├─ 프로젝트 상태 기반 모드 판단
      │   1. "!" 접두사 → 통과 (스킵 모드)
@@ -189,12 +198,12 @@ devflow-prompt.sh 발동
 Claude Code가 Write/Edit로 코드를 수정
      │
      ▼
-devflow-code.sh 발동
+devflow-code.js 발동
      │
-     ├─ 코드 파일인가? (.ts, .js, .py, .go, .sql 등)
+     ├─ 코드 파일인가? (스킵 확장자/파일명 제외)
      │   └─ 아니면 → 통과
      │
-     ├─ .devflow.yaml 로드
+     ├─ .devflow.json 로드
      │
      ├─ 코드 리뷰 (활성화 시)
      │   → Haiku: "버그/로직 오류 있나?"
@@ -220,30 +229,27 @@ devflow-code.sh 발동
 ### 5.5 Haiku API 호출 메커니즘
 
 ```
-훅 스크립트에서 claude -p를 사용하여 Haiku 호출:
+Node.js child_process.execSync로 claude -p 호출:
 
-claude -p \
-  --model claude-haiku-4-5-20251001 \
-  --max-turns 1 \
-  --max-budget-usd 0.05 \
-  --output-format json \
-  "프롬프트"
+  execSync('claude -p --model claude-haiku-4-5-20251001 '
+    + '--max-turns 1 --max-budget-usd 0.05 --output-format json',
+    { input: prompt, timeout: 20000 })
 
 - claude.ai 인증을 공유하므로 별도 API 키 불필요
-- --max-turns 1로 단일 턴 보장
-- --max-budget-usd 0.05로 비용 제한
+- --output-format json → {type:"result", result:"텍스트"} 래퍼 반환
+- .result 필드에서 텍스트 추출 후 JSON 파싱
 - 호출당 ~$0.002, 지연 ~2-5초
 ```
 
 ### 5.6 훅 이벤트별 역할
 
 ```
-UserPromptSubmit (devflow-prompt.sh):
+UserPromptSubmit (devflow-prompt.js):
   - 프롬프트 의도 분석 → 기획 모드 발동
   - additionalContext 주입 가능 ✓
   - 차단(block) 가능 ✓
 
-PostToolUse (devflow-code.sh):
+PostToolUse (devflow-code.js):
   - Write/Edit 후 코드 품질 검증
   - additionalContext 주입 가능 ✓
   - 차단 불가 (코드는 이미 작성됨, 수정 지시만 가능)
@@ -259,63 +265,40 @@ PostToolUse (devflow-code.sh):
 파일 10개를 연속 수정하면 Haiku가 10회 호출되는 것을 방지:
 
 PostToolUse 훅에서:
-  1. .devflow/pending-changes에 변경 파일 경로 누적
-  2. 마지막 변경 후 5초 이내에 다른 변경이 없으면 → 리뷰 실행
-  3. 연속 변경 중이면 → 스킵 (누적만)
+  1. .devflow/pending에 변경 파일 경로 누적
+  2. .devflow/last-change 타임스탬프와 현재 시간 비교
+  3. 5000ms 미경과 → 스킵 (누적만), 경과 → 리뷰 실행
 
-구현: 타임스탬프 파일 비교로 간단하게 처리
+구현: Date.now() 밀리초 타임스탬프 비교, 블로킹 없음
 ```
 
 ---
 
 ## 6. 설정 파일
 
-```yaml
-# .devflow.yaml
-
-# 기획 모드 설정
-planning:
-  enabled: true
-  interview: true         # 빠진 정보 질문
-  critical_review: true   # 비판적 검토
-  doc_update: true        # 문서 갱신 제안
-
-# 개발 모드 설정
-coding:
-  code_review:
-    enabled: true
-    severity: high         # high 이상만 보고
-
-  security_review:
-    enabled: true
-    checks:
-      - injection
-      - secrets
-      - auth_bypass
-
-  test:
-    enabled: true
-    suggest: true          # 테스트 작성 제안
-    command: "npm test"    # 기존 테스트 러너
-
-  commit:
-    enabled: true
-    format: conventional
-    auto: false            # 제안만 (자동 커밋 아님)
-
-  docs:
-    enabled: true          # 기본 활성
-
-# 스킵 패턴
-skip:
-  prefix: "!"             # !로 시작하면 DevFlow 비활성
-  extensions:              # 이 확장자는 코드 리뷰 스킵
-    - ".md"
-    - ".json"
-    - ".yaml"
-    - ".yml"
-    - ".txt"
+```json
+// .devflow.json
+{
+  "planning": {
+    "enabled": true
+  },
+  "coding": {
+    "code_review": { "enabled": true, "severity": "high" },
+    "security_review": { "enabled": true },
+    "test": { "enabled": true },
+    "commit": { "enabled": true },
+    "docs": { "enabled": true }
+  },
+  "skip": {
+    "prefix": "!",
+    "extensions": ["md","json","yaml","yml","txt","toml","lock","env","cfg","ini","csv"],
+    "filenames": [".gitignore",".dockerignore","Makefile","Dockerfile","LICENSE"],
+    "prefixes": [".env"]
+  }
+}
 ```
+
+> JSON 형식으로 python3/pyyaml 의존성 제거. Node.js의 `require()`로 바로 로드.
 
 ---
 
@@ -395,8 +378,8 @@ feat: 이벤트 기반 환불 처리 추가
 | 코드 리뷰 | 시키면 함 | code-reviewer 에이전트 | **코드 변경 시 자동** |
 | 보안 검토 | 시키면 함 | security-reviewer 에이전트 | **코드 변경 시 자동** |
 | 테스트 | 시키면 함 | tdd-guide 에이전트 | **자동 제안** |
-| 설치 | 기본 | 복잡한 설정 | **파일 복사 3초** |
-| 설정 | CLAUDE.md | 다수의 설정 파일 | **YAML 1개** |
+| 설치 | 기본 | 복잡한 설정 | **plugin install 한 줄** |
+| 설정 | CLAUDE.md | 다수의 설정 파일 | **JSON 1개** |
 | 학습 곡선 | 없음 | 높음 | **없음** |
 | 핵심 차이 | "시키면 한다" | "스킬을 호출한다" | **"알아서 따라온다"** |
 
@@ -411,24 +394,25 @@ feat: 이벤트 기반 환불 처리 추가
 - PostToolUse: additionalContext 주입 가능, 차단 불가
 - Stop: additionalContext 미지원 → 사용하지 않음
 
-### 9.2 훅 등록 (settings.json)
+### 9.2 훅 등록 (hooks/hooks.json — 플러그인 방식)
 
 ```json
 {
+  "description": "DevFlow - 기획 모드 + 개발 모드 자동화",
   "hooks": {
     "UserPromptSubmit": [{
       "matcher": "",
       "hooks": [{
         "type": "command",
-        "command": ".claude/hooks/devflow-prompt.sh",
-        "timeout": 15
+        "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/devflow-prompt.js\"",
+        "timeout": 30
       }]
     }],
     "PostToolUse": [{
       "matcher": "Write|Edit",
       "hooks": [{
         "type": "command",
-        "command": ".claude/hooks/devflow-code.sh",
+        "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/devflow-code.js\"",
         "timeout": 30
       }]
     }]
@@ -436,67 +420,78 @@ feat: 이벤트 기반 환불 처리 추가
 }
 ```
 
-### 9.3 훅 출력 프로토콜
+> `${CLAUDE_PLUGIN_ROOT}`는 Claude Code가 플러그인 실행 시 자동으로 주입하는 환경 변수.
 
-```bash
-# 통과 (아무것도 하지 않음)
-echo '{}'
-exit 0
+### 9.3 훅 출력 프로토콜 (Node.js)
 
-# additionalContext 주입
-echo '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"리뷰 결과: ..."}}'
-exit 0
+```javascript
+// 통과 (아무것도 하지 않음)
+process.stdout.write(JSON.stringify({}));
 
-# 차단 (UserPromptSubmit만 가능)
-echo '{"decision":"block","reason":"기획 문서가 필요합니다"}'
-exit 2
+// additionalContext 주입
+process.stdout.write(JSON.stringify({
+  hookSpecificOutput: {
+    hookEventName: 'PostToolUse',
+    additionalContext: '리뷰 결과: ...'
+  }
+}));
 
-# 에러 (무시하고 계속 진행 — graceful degradation)
-exit 1
+// 차단 (UserPromptSubmit만 가능)
+process.stdout.write(JSON.stringify({
+  decision: 'block',
+  reason: '기획 문서가 필요합니다'
+}));
+process.exit(2);
+
+// 에러 시 graceful degradation (빈 JSON 출력)
 ```
 
-### 9.4 Haiku 호출 및 응답 파싱
+### 9.4 Haiku 호출 및 응답 파싱 (hooks/lib/haiku.js)
 
-```bash
-RESULT=$(claude -p \
-  --model claude-haiku-4-5-20251001 \
-  --max-turns 1 \
-  --max-budget-usd 0.05 \
-  --output-format json \
-  "프롬프트")
+```javascript
+const { execSync } = require('child_process');
+const { extractJson } = require('./extract-json');
 
-# 실패 시 graceful degradation (에러 무시, 훅 통과)
-if [ $? -ne 0 ]; then
-  echo '{}'
-  exit 0
-fi
+function callHaiku(prompt, fallback) {
+  const raw = execSync(
+    'claude -p --model claude-haiku-4-5-20251001 '
+    + '--max-turns 1 --max-budget-usd 0.05 --output-format json',
+    { input: prompt, timeout: 20000, encoding: 'utf-8' }
+  );
+  const wrapper = JSON.parse(raw);
+  const text = wrapper.result || '';      // .result 필드에서 텍스트 추출
+  return extractJson(text, fallback);     // 텍스트에서 JSON 파싱
+}
 
-# JSON 파싱
-REVIEW=$(echo "$RESULT" | jq -r '.result // empty')
+// 실패 시 graceful degradation (fallback 반환)
 ```
 
 ### 9.5 모드 상태 관리
 
 ```
-.devflow/mode          # "planning" | "coding" | 파일 없음(기본=auto)
-.devflow/pending       # 디바운싱용 변경 파일 목록
-.devflow/chain-step    # 체이닝 현재 단계 (1=리뷰 2=테스트 3=문서 4=커밋)
+.devflow/mode            # "planning" | "coding" | 파일 없음(기본=auto)
+.devflow/pending         # 디바운싱용 변경 파일 목록
+.devflow/last-change     # 마지막 변경 타임스탬프 (밀리초)
+.devflow/chain-step      # 체이닝 현재 단계 (1=리뷰 2=테스트 3=문서 4=커밋)
+.devflow/review-targets  # 1단계에서 저장한 리뷰 대상 파일 (3단계 문서 판단용)
 ```
 
 - 기획 모드에서 PostToolUse는 스킵 (.devflow/mode가 "planning"이면)
 - 체이닝 단계는 PostToolUse 발동마다 +1 증가, 커밋 후 초기화
+- 새 프롬프트 입력 시 chain-step 리셋 (devflow-prompt.js에서 처리)
 
-### 9.6 디바운싱 (타임스탬프 비교 방식)
+### 9.6 디바운싱 (밀리초 타임스탬프 비교)
 
 ```
 PostToolUse 발동 시:
-  1. .devflow/pending에 변경 파일 추가
-  2. .devflow/last-change에 현재 타임스탬프 기록
-  3. 이전 타임스탬프와 비교: 5초 이상 경과했나?
+  1. .devflow/pending에 변경 파일 추가 (최대 100줄)
+  2. .devflow/last-change의 타임스탬프와 Date.now() 비교
+  3. 5000ms 이상 경과?
      → 경과: 누적 변경을 일괄 리뷰 실행
-     → 미경과: 스킵 (누적만)
+     → 미경과: 타임스탬프 갱신, 스킵 (누적만)
 
 ※ sleep이 아닌 타임스탬프 비교이므로 블로킹 없음
+※ 첫 번째 편집은 타임스탬프 파일이 없으므로 항상 통과
 ```
 
 ### 9.7 비용
@@ -511,11 +506,12 @@ PostToolUse 발동 시:
 
 ### 만드는 것
 
-- `devflow-prompt.sh` — UserPromptSubmit 훅 (기획 모드)
-- `devflow-code.sh` — PostToolUse 훅 (개발 모드)
-- `.devflow.yaml` — 설정 파일 스키마 + 기본값
-- `install.sh` — 설치 스크립트 (파일 복사 + settings.json 머지)
-  ※ install.sh 실행 시 .claude/settings.json이 자동 생성됨
+- `hooks/devflow-prompt.js` — UserPromptSubmit 훅 (기획 모드)
+- `hooks/devflow-code.js` — PostToolUse 훅 (개발 모드)
+- `hooks/lib/` — 공유 라이브러리 (config, haiku, extract-json, io)
+- `hooks/hooks.json` — 훅 이벤트 등록
+- `.claude-plugin/plugin.json` — 플러그인 매니페스트
+- `.devflow.json` — 설정 파일 (JSON)
 - README.md — 설치/사용 가이드
 
 ### 만들지 않는 것
@@ -523,25 +519,26 @@ PostToolUse 발동 시:
 - 서버, API, 웹 UI
 - DB, 복잡한 상태 관리
 - 팀 관리, 인증, 공유 기능
-- 패키지 매니저 배포
+- npm 외부 의존성 (zero dependencies)
 
 ---
 
 ## 11. 확장 경로
 
 ```
-Phase 1 (지금): 기획 모드 + 개발 모드, 셸 스크립트
+Phase 1 (지금): 기획 모드 + 개발 모드, Node.js 플러그인
      ↓ 검증: "인터뷰+검토가 기획 품질을 올리는가?"
      ↓ 검증: "자동 리뷰+보안이 코드 품질을 올리는가?"
 
-Phase 2: 패턴 학습
-     → "이 프로젝트에서는 항상 DB 변경 후 마이그레이션을 만드네"
-     → 패턴 감지 → 자동 제안
+Phase 2: 세부 설정 활성화
+     → severity, checks, command 등 세부 토글 동작
+     → 설정 파일 검증 및 에러 메시지
 
 Phase 3: 팀 공유
-     → .devflow.yaml을 Git으로 팀 공유
+     → .devflow.json을 Git으로 팀 공유
+     → Claude Code 플러그인 마켓플레이스 배포
      → 같은 프로세스, 같은 품질 기준
 
 Phase 4: 플랫폼
-     → 분석 대시보드, 웹 UI
+     → 패턴 학습, 분석 대시보드
 ```
