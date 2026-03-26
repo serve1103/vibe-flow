@@ -1,0 +1,29 @@
+{
+  "description": "DevFlow - 기획 모드 + 개발 모드 자동화",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/devflow-prompt.js\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/devflow-code.js\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
