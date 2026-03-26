@@ -171,7 +171,29 @@ YAML 직렬화/역직렬화 유틸리티 포함.
 
 제한: 최대 3회, 비용 2x 상한
 
-### 2.5 OutputNormalizer
+### 2.5 CodeReviewer (파이프라인 고정 스테이지)
+
+```
+파일: packages/harness/src/code-reviewer.ts
+```
+
+- 코드 산출물일 때만 자동 발동 (output_format이 code/sql일 때)
+- Haiku로 빠른 리뷰: 버그, 로직 오류, 컨벤션 준수
+- 결과를 산출물에 리뷰 코멘트로 첨부
+- 심각한 이슈 발견 시 warn 또는 block
+
+### 2.6 SecurityReviewer (파이프라인 고정 스테이지)
+
+```
+파일: packages/harness/src/security-reviewer.ts
+```
+
+- 코드 산출물일 때만 자동 발동
+- OWASP Top 10, 인젝션, 인증 취약점 체크
+- Haiku로 빠른 보안 스캔
+- 취약점 발견 시 심각도별 분류 (critical → block, high → warn)
+
+### 2.7 OutputNormalizer
 
 ```
 파일: packages/harness/src/output-normalizer.ts
@@ -179,17 +201,18 @@ YAML 직렬화/역직렬화 유틸리티 포함.
 
 - 구조화 데이터 추출 (코드 블록, JSON, 파일 경로)
 - 대화형 잡담 제거 ("Sure, here's..." 등)
+- 코드 리뷰/보안 검토 결과 첨부
 - 실행 요약 생성
-- `NormalizedOutput`: { raw, cleaned, structured, summary, artifacts[] }
+- `NormalizedOutput`: { raw, cleaned, structured, summary, artifacts[], reviews[] }
 
-### 2.6 BlockHarness (통합)
+### 2.8 BlockHarness (통합 파이프라인)
 
 ```
 파일: packages/harness/src/index.ts
 ```
 
 `execute(block, input, context)`:
-컨텍스트 주입 → 실행 → 품질 검증 → (실패 시 자가회복) → 정규화 → 분석 기록
+컨텍스트 주입 → 실행 → 품질 검증 → (실패 시 자가회복) → 코드 리뷰 → 보안 검토 → 정규화 → 분석 기록
 
 ### Phase 2 완료 기준
 
@@ -197,7 +220,9 @@ YAML 직렬화/역직렬화 유틸리티 포함.
 - [ ] 템플릿 변수 정상 주입
 - [ ] 품질 게이트 동작 (regex, contains, json-schema)
 - [ ] 실패 시 프롬프트 보강 재시도
-- [ ] 산출물 정규화
+- [ ] 코드 리뷰 스테이지 동작 (코드 산출물 자동 감지)
+- [ ] 보안 검토 스테이지 동작 (OWASP 체크)
+- [ ] 산출물 정규화 (리뷰 결과 포함)
 - [ ] dry-run 모드
 - [ ] 모든 테스트 통과
 

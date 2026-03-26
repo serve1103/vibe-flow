@@ -101,10 +101,10 @@ Vibe Flow가 구현하지 않는 영역. Claude Code의 네이티브 기능을 �
 블록을 실제로 실행하고 품질을 보장하는 래퍼.
 
 ```
-블록 실행 흐름:
+파이프라인 전체 흐름:
 
   ┌─────────────────┐
-  │ Context Injector │ ← 블록 템플릿 + 변수 + 컨벤션 + 이전 산출물
+  │ Context Injector │ ← 세션 기억 + 블록 템플릿 + 변수 + 컨벤션
   └────────┬────────┘
            ▼
   ┌─────────────────┐
@@ -112,16 +112,26 @@ Vibe Flow가 구현하지 않는 영역. Claude Code의 네이티브 기능을 �
   └────────┬────────┘
            ▼
   ┌─────────────────┐
-  │  Quality Gate    │ ← regex, contains, json-schema, custom-prompt
+  │  Quality Gate    │ ← 블록 내장 게이트 (regex, contains 등)
   └────────┬────────┘
            │
-     통과? ─┼─ Yes → Output Normalizer → 결과 반환
+     통과? ─┼─ No → Self Healer (최대 3회, 2x 비용 상한)
            │
-           └─ No → Self Healer
-                    ├─ 전략1: 실패 피드백 포함 재실행
-                    ├─ 전략2: 모델 업그레이드 (Sonnet→Opus)
-                    └─ 전략3: 프롬프트 분할 후 순차 실행
-                    (최대 3회, 2x 비용 상한)
+           Yes
+           ▼
+  ┌─────────────────┐
+  │  Code Review     │ ← 파이프라인 고정 스테이지 (코드 산출물일 때)
+  │  (자동 리뷰)     │   버그, 로직 오류, 컨벤션 준수 검증
+  └────────┬────────┘
+           ▼
+  ┌─────────────────┐
+  │  Security Review │ ← 파이프라인 고정 스테이지 (코드 산출물일 때)
+  │  (보안 검토)     │   OWASP Top 10, 인젝션, 인증 취약점
+  └────────┬────────┘
+           ▼
+  ┌─────────────────┐
+  │ Output Normalizer│ → 포맷팅, 요약, 채널별 적응 → 결과 반환
+  └─────────────────┘
 ```
 
 **구성 요소:**
@@ -129,11 +139,13 @@ Vibe Flow가 구현하지 않는 영역. Claude Code의 네이티브 기능을 �
 | 모듈 | 파일 | 역할 |
 |------|------|------|
 | ClaudeExecutor | `executor.ts` | CLI 프로세스 생성, stream-json 파싱, 타임아웃 관리 |
-| ContextInjector | `context-injector.ts` | 템플릿 변수 치환, 컨벤션 주입, 이전 산출물 연결 |
-| QualityGateValidator | `quality-gate.ts` | 산출물 검증 (regex/contains/json-schema/custom-prompt) |
+| ContextInjector | `context-injector.ts` | 세션 기억 로드, 템플릿 변수 치환, 컨벤션 주입 |
+| QualityGateValidator | `quality-gate.ts` | 블록 내장 게이트 검증 (regex/contains/json-schema/custom-prompt) |
+| CodeReviewer | `code-reviewer.ts` | 파이프라인 고정: 자동 코드 리뷰 (버그, 로직, 컨벤션) |
+| SecurityReviewer | `security-reviewer.ts` | 파이프라인 고정: 보안 검토 (OWASP Top 10, 인젝션) |
 | SelfHealer | `self-healer.ts` | 실패 시 재시도 전략 오케스트레이션 |
 | OutputNormalizer | `output-normalizer.ts` | 산출물 정규화 (구조화, 정리, 요약) |
-| BlockHarness | `index.ts` | 위 모듈을 조합하는 통합 실행 인터페이스 |
+| BlockHarness | `index.ts` | 위 모듈을 파이프라인으로 조합하는 통합 인터페이스 |
 
 ### 2.4 블록 저장소
 
@@ -144,12 +156,13 @@ Vibe Flow가 구현하지 않는 영역. Claude Code의 네이티브 기능을 �
 
 blocks
 ├── id (PK)
-├── team_id (FK)
-├── slug (unique per team)
+├── owner_id (FK → users)
+├── slug (unique per owner)
 ├── name
 ├── description
 ├── definition_yaml (TEXT)
 ├── status (draft | active | archived)
+├── visibility (private | shared)
 ├── schema_version
 ├── created_by
 ├── created_at
