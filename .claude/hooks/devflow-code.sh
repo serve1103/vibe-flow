@@ -43,9 +43,16 @@ EXTENSION="${FILE_PATH##*.}"
 # 스킵할 확장자 및 파일명 (MEDIUM-5: 하드코딩 목록, Phase 2에서 yaml 연동)
 SKIP_EXTENSIONS=("md" "json" "yaml" "yml" "txt" "toml" "lock" "gitignore" "env" "cfg" "ini" "csv")
 SKIP_FILENAMES=(".gitignore" ".dockerignore" "Makefile" "Dockerfile" "LICENSE")
+SKIP_PREFIXES=(".env")
 BASENAME=$(basename "$FILE_PATH")
 for name in "${SKIP_FILENAMES[@]}"; do
   if [ "$BASENAME" = "$name" ]; then
+    echo '{}'
+    exit 0
+  fi
+done
+for prefix in "${SKIP_PREFIXES[@]}"; do
+  if [[ "$BASENAME" == "${prefix}"* ]]; then
     echo '{}'
     exit 0
   fi
@@ -146,6 +153,9 @@ case "$CHAIN_STEP" in
     if [ -z "$PENDING_FILES" ]; then
       PENDING_FILES="$FILE_PATH"
     fi
+
+    # 3단계 문서 판단용으로 원본 대상 파일 저장
+    echo "$PENDING_FILES" > "$DEVFLOW_DIR/review-targets"
 
     # 코드 내용 수집 (MEDIUM-4: 절단 시 표시 추가)
     CODE_RAW=$(echo "$INPUT" | jq -r '.tool_input.content // empty')
@@ -251,9 +261,13 @@ print(sys.argv[1])
     # 3단계: 문서 갱신 제안 (매칭 안 되면 4단계로 자동 건너뜀)
     DOC_SUGGEST=""
     if [ "$DOCS_ENABLED" = "True" ]; then
-      PENDING_ALL="$FILE_PATH"
-      if [ -f "$PENDING_FILE" ]; then
-        PENDING_ALL+=" $(cat "$PENDING_FILE" 2>/dev/null)"
+      # 1단계에서 저장한 원본 리뷰 대상 파일 사용
+      PENDING_ALL=""
+      if [ -f "$DEVFLOW_DIR/review-targets" ]; then
+        PENDING_ALL=$(cat "$DEVFLOW_DIR/review-targets" 2>/dev/null)
+      fi
+      if [ -z "$PENDING_ALL" ]; then
+        PENDING_ALL="$FILE_PATH"
       fi
       if echo "$PENDING_ALL" | grep -qiE "route|api|endpoint|controller"; then
         DOC_SUGGEST="API 관련 코드가 변경되었습니다. API 문서를 갱신하세요."
