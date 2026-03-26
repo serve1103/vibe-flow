@@ -407,4 +407,8 @@ UserPromptSubmit 훅
 → 인터뷰와 블록 매칭이 하나의 훅에서 동시에 처리됨
 ```
 
+> 참고: 스마트 인터뷰와 블록 매칭은 하나의 UserPromptSubmit 훅에서 통합 처리된다.
+> 훅 스크립트가 (1) 컨텍스트 수집 (2) Haiku 분석(충분성+블록 매칭) (3) 결과를 additionalContext로 주입하는 단일 파이프라인.
+> ARCHITECTURE.md의 "확정적 통합: UserPromptSubmit 훅"과 동일한 훅이다.
+
 구현 시점: **Phase 7 (Integration)** 에서 CLAUDE.md 통합과 함께 내장.

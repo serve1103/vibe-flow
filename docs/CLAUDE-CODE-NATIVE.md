@@ -21,7 +21,7 @@ Vibe Flow는 Claude Code를 대체하지 않고, **위에 올라가서 강화한
 
 | Claude Code 기능 | Vibe Flow 활용 |
 |-----------------|----------------|
-| `claude --remote-control` | Creator가 웹에서 세션 접근 |
+| `claude --remote-control` | 팀원이 웹에서 세션 접근 |
 | `claude.ai/code` 웹 UI | 세션 모니터링, 승인 |
 | QR 코드 모바일 접속 | 이동 중 결과 확인 |
 
@@ -37,8 +37,8 @@ Vibe Flow는 Claude Code를 대체하지 않고, **위에 올라가서 강화한
 
 | Claude Code 기능 | Vibe Flow 활용 |
 |-----------------|----------------|
-| `plugin:telegram` | Consumer의 텔레그램 접근 |
-| `plugin:discord` | Consumer의 디스코드 접근 |
+| `plugin:telegram` | 팀원의 텔레그램 접근 |
+| `plugin:discord` | 팀원의 디스코드 접근 |
 | 양방향 채팅 | 자연어 → 블록 매칭 → 결과 응답 |
 | 웹훅 | CI/CD 알림 → 자동 대응 |
 | sender allowlist | 팀 멤버 접근 제어 |

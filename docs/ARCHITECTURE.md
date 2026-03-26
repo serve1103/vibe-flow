@@ -52,9 +52,9 @@ Vibe Flow가 구현하지 않는 영역. Claude Code의 네이티브 기능을 �
 
 | 기능 | Claude Code 기능 | 용도 |
 |------|-----------------|------|
-| 웹/모바일 접근 | Remote Control (`claude --remote-control`) | Creator 및 Consumer의 웹 접근 |
-| 텔레그램 | Channels (`plugin:telegram`) | Consumer의 메시지 기반 사용 |
-| 디스코드 | Channels (`plugin:discord`) | Consumer의 메시지 기반 사용 |
+| 웹/모바일 접근 | Remote Control (`claude --remote-control`) | 팀원의 웹 접근 |
+| 텔레그램 | Channels (`plugin:telegram`) | 팀원의 메시지 기반 사용 |
+| 디스코드 | Channels (`plugin:discord`) | 팀원의 메시지 기반 사용 |
 | 세션 관리 | `--session-id`, `--resume` | 작업 연속성 유지 |
 | 보안 | sender allowlist | 승인된 사용자만 접근 |
 
@@ -199,6 +199,15 @@ teams
 ├── default_model
 ├── default_conventions (JSON)
 └── created_at
+
+users
+├── id (PK)
+├── team_id (FK)
+├── external_id (채널별 사용자 ID — 텔레그램/디스코드)
+├── display_name
+├── role (member | admin)
+├── created_at
+└── updated_at
 ```
 
 ### 2.5 API 서버
@@ -210,7 +219,7 @@ teams
 
 블록 관리:
   POST   /api/blocks              블록 생성
-  GET    /api/blocks              블록 목록 (검색, 필터, 페이지네이션)
+  GET    /api/blocks              블록 목록 (검색, 필터, 페이지네이션) (쿼리: ?scope=mine|shared|all)
   GET    /api/blocks/:id          블록 상세
   PUT    /api/blocks/:id          블록 수정 (자동 버전 생성)
   DELETE /api/blocks/:id          블록 아카이브
@@ -218,6 +227,7 @@ teams
   POST   /api/blocks/:id/rollback 버전 롤백
   GET    /api/blocks/:id/yaml     YAML 다운로드
   POST   /api/blocks/import       YAML 임포트
+  POST   /api/blocks/:id/share    블록 공유 토글
 
 실행:
   POST   /api/execute             블록 실행 (SSE 스트리밍)
@@ -330,17 +340,29 @@ UserPromptSubmit 훅 발동
 **장점**: 100% 확정적 실행 (LLM의 지시 따르기에 의존하지 않음)
 **CLAUDE.md**: 폴백 및 보조 역할로 유지
 
+### 3.2 순환 참조 차단
+
+vf 하네스가 `claude -p`를 호출할 때, 해당 프로세스가 CLAUDE.md를 읽고 다시 `vf execute`를 호출하는 순환을 차단해야 한다.
+
+```
+차단 메커니즘:
+  1. 하네스가 claude -p 호출 시 환경변수 VF_INTERNAL=1 설정
+  2. CLAUDE.md에 "VF_INTERNAL 환경변수가 설정된 경우 vf execute 호출 금지" 명시
+  3. 훅 스크립트에서 VF_INTERNAL=1이면 즉시 통과 (인터뷰/매칭 스킵)
+  4. 추가 안전장치: claude -p 호출 시 --system-prompt 으로 "vf 명령어 호출 금지" 주입
+```
+
 ---
 
 ## 4. 데이터 흐름
 
-### 4.1 Consumer 실행 흐름 (텔레그램)
+### 4.1 팀원 실행 흐름 (텔레그램)
 
 ```
 1. 사용자 → 텔레그램: "우리 서비스의 인증 API 설계해줘"
 2. 텔레그램 → Claude Code Channels: 메시지 전달
 3. Claude Code → CLAUDE.md 확인 → vf execute --dry-run
-4. vf CLI → 매칭 엔진: 의도 분류 + 벡터 매칭
+4. vf CLI → 매칭 엔진: 트리거 퍼지 매칭 + 의도 분류 폴백
 5. 매칭 엔진 → "API 설계" 블록 (confidence: 0.88)
 6. vf CLI → 하네스: 블록 실행 요청
 7. 하네스 → 컨텍스트 주입: 블록 템플릿 + 팀 컨벤션 + 세션 맥락
@@ -353,7 +375,7 @@ UserPromptSubmit 훅 발동
 14. 하네스 → 분석 기록: 실행 로그 저장
 ```
 
-### 4.2 Creator 블록 생성 흐름 (웹 UI)
+### 4.2 블록 생성 흐름 (웹 UI)
 
 ```
 1. Creator → 웹 UI: "API 설계 블록 만들고 싶어요"
@@ -368,7 +390,7 @@ UserPromptSubmit 훅 발동
 10. 하네스 → 결과 + 품질 게이트 결과 반환
 11. Creator → "저장"
 12. API → 블록 저장소: 블록 저장
-13. 매칭 엔진: 벡터 인덱스 업데이트
+13. 매칭 엔진: 트리거 문구 인덱스 업데이트
 ```
 
 ---
@@ -429,7 +451,7 @@ UserPromptSubmit 훅 발동
     matching-engine/              # 자연어 → 블록 매칭
       src/
         classifier.ts             # 의도 분류 (Claude API)
-        matcher.ts                # 벡터 유사도 (vectra)
+        trigger-matcher.ts        # 트리거 문구 퍼지 매칭
         ranker.ts                 # 신뢰도 점수 + 판정
         index.ts
 
@@ -438,6 +460,8 @@ UserPromptSubmit 훅 발동
         executor.ts               # CLI 프로세스 관리
         context-injector.ts       # 컨텍스트 조립
         quality-gate.ts           # 품질 검증
+        code-reviewer.ts          # 파이프라인 고정: 코드 리뷰
+        security-reviewer.ts      # 파이프라인 고정: 보안 검토
         self-healer.ts            # 재시도 로직
         output-normalizer.ts      # 산출물 정규화
         channel-adapter.ts        # 채널별 포맷팅

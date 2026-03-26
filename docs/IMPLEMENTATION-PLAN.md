@@ -44,6 +44,37 @@ Phase 4: Block Creator ── (병렬 가능) ───┘
 
 ---
 
+## 3.5 Phase 0: Bootstrap (1일)
+
+> 모노레포 셋업 + 공유 유틸리티
+
+### 0.1 모노레포 초기화
+
+- 루트 `package.json`, pnpm workspace, turborepo
+- tsconfig.base.json (strict 모드)
+- Vitest 글로벌 설정
+- ESLint + Prettier
+
+### 0.2 shared 패키지
+
+```
+위치: packages/shared/src/
+파일: claude-client.ts, config.ts, logger.ts, errors.ts
+```
+
+- Claude API 래퍼 (Haiku/Sonnet/Opus 호출)
+- 환경변수/설정 파일 로더
+- 구조화 로거 (pino 기반)
+- 커스텀 에러 타입 (VibeFlowError 등)
+
+### Phase 0 완료 기준
+
+- [ ] `pnpm install && pnpm build` 성공
+- [ ] Claude API 래퍼로 Haiku 호출 1회 성공
+- [ ] 로거, 에러 타입 단위 테스트 통과
+
+---
+
 ## 3. Phase 1: Foundation (3-4일)
 
 > 블록이 무엇인지 정의하고 저장하는 기반 구축
@@ -90,7 +121,7 @@ YAML 직렬화/역직렬화 유틸리티 포함.
 - `BlockRepository`: create, findById, findBySlug, findByTeam, update, archive, search
 - `VersionManager`: createVersion, getVersionHistory, rollbackToVersion, diffVersions
 - `AnalyticsTracker`: recordExecution, getBlockUsageStats, getTeamUsageStats
-- SQLite (dev), PostgreSQL (prod)
+- SQLite (WAL 모드)
 
 ### 1.4 Phase 1 테스트
 
@@ -459,10 +490,8 @@ Claude Code가 자동으로 읽는 CLAUDE.md에 Vibe Flow 연동 지시를 작�
 | 재시도 비용 폭발 | 중간 | 최대 3회, 2x 상한, 일일 한도 |
 | 잘못된 블록 매칭 | 중간 | 신뢰도 임계값 + 확인 단계 |
 | 대화형 생성 품질 | 중간 | 테스트 필수, AI 품질게이트 제안 |
-| 임베딩 모델 가용성 | 낮음 | transformers.js 로컬 폴백 |
 | Channels Research Preview 구문 변경 | 중간 | 훅 기반 확정적 통합으로 Channels 의존도 최소화 |
 | Drizzle SQLite↔PostgreSQL 스키마 비호환 | 중간 | MVP는 SQLite 단일 타겟, 프로덕션 전환 시 스키마 마이그레이션 별도 수행 |
-| Voyage AI API 의존 | 낮음 | transformers.js 로컬 폴백, 임베딩 어댑터 추상화 |
 
 ---
 
@@ -470,7 +499,8 @@ Claude Code가 자동으로 읽는 CLAUDE.md에 Vibe Flow 연동 지시를 작�
 
 | Phase | 소요 | 시작 조건 |
 |-------|------|----------|
-| Phase 1: Foundation | 3-4일 | 즉시 |
+| Phase 0: Bootstrap | 1일 | 즉시 |
+| Phase 1: Foundation | 3-4일 | Phase 0 |
 | Phase 2: Harness | 4-5일 | Phase 1 |
 | Phase 3: Matching | 1-2일 | Phase 1 (2와 병렬, 벡터 매칭 제거로 단축) |
 | Phase 4: Creator | 3-4일 | Phase 1 (2,3과 병렬) |
@@ -482,11 +512,30 @@ Claude Code가 자동으로 읽는 CLAUDE.md에 Vibe Flow 연동 지시를 작�
 > 비판적 검토 참고: 위 일정은 AI 코딩 활용을 전제한 낙관적 산정.
 > 1인 개발 시 현실적으로 6-8주, 보수적으로 8-12주 소요 가능.
 
+### 11.1 MVP 범위 정의
+
+**Tier 1 — 핵심 MVP (이것 없이는 가치 없음)**
+- Phase 0: Bootstrap
+- Phase 1: Foundation (블록 스키마 + 저장)
+- Phase 2A: Harness Core (실행 + 품질 게이트, 코드 리뷰/보안 검토 제외)
+- Phase 3: Matching Engine
+- Phase 5 일부: CLI (`vf execute`, `vf blocks`)
+
+**Tier 2 — 빠른 후속 (MVP 직후)**
+- Phase 2B: Harness Advanced (코드 리뷰 + 보안 검토)
+- Phase 4: Block Creator (대화형 생성)
+- Phase 5 나머지: API 서버
+- Smart Interview 훅
+
+**Tier 3 — 확장 (검증 후)**
+- Phase 6: Web UI
+- Phase 7: CLAUDE.md/Channels 통합
+
 ---
 
 ## 12. 성공 기준 (전체)
 
-- [ ] Creator가 AI 대화로 5분 안에 블록 생성
+- [ ] 팀원이 AI 대화로 5분 안에 블록 생성
 - [ ] 팀원이 텔레그램에서 "DB 설계해줘" → 블록 자동 매칭 & 실행
 - [ ] **같은 요청, 다른 사람 → 같은 품질** (표준화 달성)
 - [ ] 블록이 버전 관리되고 시간에 따라 개선됨
