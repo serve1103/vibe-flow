@@ -1,0 +1,45 @@
+# DevFlow 설정
+# 프로젝트별 개발 프로세스 커스터마이징
+
+# 기획 모드 설정
+planning:
+  enabled: true
+  interview: true         # 빠진 정보 질문
+  critical_review: true   # 비판적 검토
+  doc_update: true        # 문서 갱신 제안
+
+# 개발 모드 설정
+coding:
+  code_review:
+    enabled: true
+    severity: high         # high 이상만 보고
+
+  security_review:
+    enabled: true
+    checks:
+      - injection
+      - secrets
+      - auth_bypass
+
+  test:
+    enabled: true
+    suggest: true          # 테스트 작성 제안
+
+  commit:
+    enabled: true
+    format: conventional
+    auto: false            # 제안만 (자동 커밋 아님)
+
+  docs:
+    enabled: true
+    suggest: true          # 문서 갱신 제안
+
+# 스킵 패턴
+skip:
+  prefix: "!"             # !로 시작하면 DevFlow 비활성
+  extensions:              # 이 확장자는 코드 리뷰 스킵
+    - ".md"
+    - ".json"
+    - ".yaml"
+    - ".yml"
+    - ".txt"
