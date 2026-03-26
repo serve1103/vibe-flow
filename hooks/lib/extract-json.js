@@ -1,6 +1,6 @@
 function extractJson(text, fallback) {
-  // Try markdown code block first
-  const cbMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+  // Try markdown code block first (greedy inside code block boundaries)
+  const cbMatch = text.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
   if (cbMatch) {
     try { return JSON.parse(cbMatch[1]); } catch {}
   }
@@ -9,7 +9,11 @@ function extractJson(text, fallback) {
   for (const c of candidates) {
     try { return JSON.parse(c); } catch {}
   }
-  return typeof fallback === 'string' ? JSON.parse(fallback) : fallback;
+  try {
+    return typeof fallback === 'string' ? JSON.parse(fallback) : fallback;
+  } catch {
+    return {};
+  }
 }
 
 module.exports = { extractJson };

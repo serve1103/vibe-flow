@@ -18,7 +18,11 @@ function callHaiku(prompt, fallback, options = {}) {
     const text = wrapper.result || '';
     return extractJson(text, fallback);
   } catch {
-    return typeof fallback === 'string' ? JSON.parse(fallback) : fallback;
+    try {
+      return typeof fallback === 'string' ? JSON.parse(fallback) : fallback;
+    } catch {
+      return {};
+    }
   }
 }
 

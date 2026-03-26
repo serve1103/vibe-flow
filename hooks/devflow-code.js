@@ -1,8 +1,11 @@
 #!/usr/bin/env node
+// Resolve plugin root (fallback to script directory's parent)
+const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT || require('path').resolve(__dirname, '..');
 const fs = require('fs');
 const path = require('path');
 const { loadConfig } = require('./lib/config');
 const { callHaiku } = require('./lib/haiku');
+const { readFile, writeFile, appendFile, readFileLines, limitFileLines } = require('./lib/io');
 
 let inputData = '';
 process.stdin.setEncoding('utf-8');
@@ -51,16 +54,17 @@ function main(input) {
   const skipExts = config.skip?.extensions || [];
   if (skipExts.includes(ext)) return output({});
 
-  // Debouncing (5 second threshold)
+  // Debouncing (5000 millisecond threshold)
   const pendingFile = path.join(devflowDir, 'pending');
   const timestampFile = path.join(devflowDir, 'last-change');
-  const now = Math.floor(Date.now() / 1000);
+  const now = Date.now();
 
+  // Note: race condition possible with concurrent hooks, acceptable for MVP
   appendFile(pendingFile, filePath + '\n');
   limitFileLines(pendingFile, 100);
 
   const lastChange = parseInt(readFile(timestampFile) || '0', 10);
-  if (lastChange > 0 && (now - lastChange) < 5) {
+  if (lastChange > 0 && (now - lastChange) < 5000) {
     writeFile(timestampFile, String(now));
     return output({});
   }
@@ -84,12 +88,19 @@ function main(input) {
       // Save review targets for step 3
       writeFile(path.join(devflowDir, 'review-targets'), pendingFiles);
 
-      // Get code content
-      let codeContent = input.tool_input?.content || input.tool_input?.new_string || '';
-      const totalLines = codeContent.split('\n').length;
-      const lines = codeContent.split('\n').slice(0, 200);
-      codeContent = lines.join('\n');
-      if (totalLines > 200) codeContent += `\n\n... (${totalLines}줄 중 200줄만 표시)`;
+      // Get code content (include old/new for Edit tool)
+      let codeContent = '';
+      if (toolName === 'Edit') {
+        const oldStr = input.tool_input?.old_string || '';
+        const newStr = input.tool_input?.new_string || '';
+        codeContent = `변경 전:\n${oldStr}\n\n변경 후:\n${newStr}`;
+      } else {
+        codeContent = input.tool_input?.content || input.tool_input?.new_string || '';
+        const totalLines = codeContent.split('\n').length;
+        const lines = codeContent.split('\n').slice(0, 200);
+        codeContent = lines.join('\n');
+        if (totalLines > 200) codeContent += `\n\n... (${totalLines}줄 중 200줄만 표시)`;
+      }
 
       if (!codeContent.trim()) {
         writeFile(chainStepFile, '2');
@@ -100,7 +111,7 @@ function main(input) {
 
       // Code review
       if (config.coding.code_review?.enabled) {
-        const reviewPrompt = `다음 코드 변경을 리뷰하세요. high 이상 심각도의 문제만 보고하세요.\n\n파일: ${pendingFiles}\n코드:\n${codeContent}\n\nJSON으로만 응답:\n문제없음: {"issues":[]}\n문제있음: {"issues":[{"severity":"high","description":"설명","suggestion":"제안"}]}`;
+        const reviewPrompt = `다음 코드 변경을 리뷰하세요. high 이상 심각도의 문제만 보고하세요.\n\n파일: ${pendingFiles}\n코드:\n<code>\n${codeContent}\n</code>\n\nJSON으로만 응답:\n문제없음: {"issues":[]}\n문제있음: {"issues":[{"severity":"high","description":"설명","suggestion":"제안"}]}`;
 
         const review = callHaiku(reviewPrompt, { issues: [] });
         if (review.issues && review.issues.length > 0) {
@@ -111,7 +122,7 @@ function main(input) {
 
       // Security review
       if (config.coding.security_review?.enabled) {
-        const secPrompt = `다음 코드에서 보안 취약점을 체크하세요.\n체크 항목: SQL injection, 하드코딩된 시크릿/API키, 경로 탐색, 인증 우회\n\n파일: ${pendingFiles}\n코드:\n${codeContent}\n\nJSON으로만 응답:\n안전: {"safe":true}\n취약점: {"safe":false,"issues":[{"severity":"critical","description":"설명"}]}`;
+        const secPrompt = `다음 코드에서 보안 취약점을 체크하세요.\n체크 항목: SQL injection, 하드코딩된 시크릿/API키, 경로 탐색, 인증 우회\n\n파일: ${pendingFiles}\n코드:\n<code>\n${codeContent}\n</code>\n\nJSON으로만 응답:\n안전: {"safe":true}\n취약점: {"safe":false,"issues":[{"severity":"critical","description":"설명"}]}`;
 
         const security = callHaiku(secPrompt, { safe: true });
         if (security.safe === false && security.issues) {
@@ -190,31 +201,4 @@ function main(input) {
 // Utility functions
 function output(obj) {
   process.stdout.write(JSON.stringify(obj));
-}
-
-function readFile(p) {
-  try { return fs.readFileSync(p, 'utf-8').trim(); } catch { return ''; }
-}
-
-function writeFile(p, content) {
-  try { fs.writeFileSync(p, content, 'utf-8'); } catch {}
-}
-
-function appendFile(p, content) {
-  try { fs.appendFileSync(p, content, 'utf-8'); } catch {}
-}
-
-function readFileLines(p) {
-  return readFile(p).split('\n').filter(Boolean);
-}
-
-function limitFileLines(p, max) {
-  const lines = readFileLines(p);
-  if (lines.length > max) {
-    writeFile(p, lines.slice(-max).join('\n') + '\n');
-  }
-}
-
-function removeFile(p) {
-  try { fs.unlinkSync(p); } catch {}
 }

@@ -1,8 +1,11 @@
 #!/usr/bin/env node
+// Resolve plugin root (fallback to script directory's parent)
+const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT || require('path').resolve(__dirname, '..');
 const fs = require('fs');
 const path = require('path');
 const { loadConfig } = require('./lib/config');
 const { callHaiku } = require('./lib/haiku');
+const { writeFile, removeFile } = require('./lib/io');
 
 // Read stdin
 let inputData = '';
@@ -54,7 +57,8 @@ function main(input) {
 
   const docsDir = path.join(cwd, 'docs');
   if (fs.existsSync(docsDir)) {
-    const files = fs.readdirSync(docsDir).filter(f => f.endsWith('.md'));
+    const entries = fs.readdirSync(docsDir, { withFileTypes: true });
+    const files = entries.filter(e => e.isFile() && e.name.endsWith('.md')).map(e => e.name);
     context += `## docs/ 파일 목록\n`;
     for (const f of files) {
       const firstLine = fs.readFileSync(path.join(docsDir, f), 'utf-8').split('\n')[0] || '';
@@ -81,7 +85,9 @@ JSON으로만 응답:
 ${context}
 
 ## 사용자 프롬프트
-${prompt}`;
+<user_input>
+${prompt}
+</user_input>`;
 
   const analysis = callHaiku(haikuPrompt, { mode: 'pass' });
 
@@ -112,12 +118,4 @@ ${prompt}`;
 
 function output(obj) {
   process.stdout.write(JSON.stringify(obj));
-}
-
-function writeFile(p, content) {
-  try { fs.writeFileSync(p, content, 'utf-8'); } catch {}
-}
-
-function removeFile(p) {
-  try { fs.unlinkSync(p); } catch {}
 }
