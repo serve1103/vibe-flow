@@ -26,6 +26,7 @@ function cleanupStaleState(devflowDir) {
     removeFile(path.join(devflowDir, 'last-change'));
     removeFile(path.join(devflowDir, 'review-targets'));
     removeFile(path.join(devflowDir, 'mode'));
+    removeFile(path.join(devflowDir, 'workflow-active'));
   }
 }
 

@@ -104,15 +104,38 @@ hooks/
   hooks.json              # 훅 이벤트 등록
   devflow-prompt.js       # 기획 모드 (UserPromptSubmit)
   devflow-code.js         # 개발 모드 (PostToolUse)
+  devflow-observe.js      # 관찰 기록 (PostToolUse async)
+  devflow-analyze.js      # 피드백 분석 (Stop)
   lib/
     config.js             # 설정 로드
     haiku.js              # Haiku LLM 호출 (실패 시 1회 재시도)
     extract-json.js       # LLM 응답 JSON 추출
     io.js                 # 파일 I/O 유틸리티
     cleanup.js            # 자원 관리 (스테일 정리 + 고아 프로세스 킬)
+    skill-loader.js       # SKILL.md 로드 + 학습 규칙 인라인
+    transcript.js         # transcript JSONL 파싱
+    learning.js           # 학습 규칙 관리
+
+skills/                   # 스킬 모듈 (수동 호출: /devflow:스킬명)
+  coding-workflow/        # 개발 워크플로우 마스터
+  planning-workflow/      # 기획 워크플로우 마스터
+  code-review/            # 코드 리뷰 + references/
+  security-check/         # 보안 검토 + references/
+  test-suggest/           # 테스트 제안
+  doc-update/             # 문서 갱신
+  commit/                 # 커밋 제안 + references/
+  interview/              # 스마트 인터뷰 + references/
+  critical-review/        # 비판적 검토
+
+agents/                   # Haiku 에이전트 정의
+  reviewer.md             # 코드 리뷰 에이전트
+  security-reviewer.md    # 보안 검토 에이전트
 
 .devflow.json             # 프로세스 설정 (프로젝트별)
 .devflow/                 # 런타임 상태 (자동 생성, .gitignore 권장)
+  results/                # 스킬 완료 아티팩트
+  feedback/               # 관찰/분석 데이터
+  learned-rules/          # 자가 학습 규칙
 ```
 
 ## 자원 관리
@@ -121,7 +144,8 @@ DevFlow는 자원을 자동으로 정리합니다:
 
 - **스테일 상태 정리** — `.devflow/` 상태가 30분 이상 경과하면 자동 초기화 (매 훅 실행 시)
 - **고아 프로세스 킬** — 타임아웃된 Haiku 프로세스를 탐지하고 SIGTERM (프롬프트 입력 시)
-- **자동 복구** — 고아 프로세스 킬 후 체이닝을 1단계부터 재실행 (다음 Write/Edit 시)
+- **자동 복구** — 고아 프로세스 킬 후 워크플로우 리셋 (다음 Write/Edit 시)
+- **워크플로우 쿨다운** — 5분 내 중복 워크플로우 트리거 방지 (무한 루프 차단)
 - **Haiku 재시도** — LLM 호출 실패 시 1회 자동 재시도
 
 ## 비용

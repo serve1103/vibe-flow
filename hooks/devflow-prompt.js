@@ -31,7 +31,7 @@ function main(input) {
   fs.mkdirSync(devflowDir, { recursive: true });
 
   // Reset workflow on new prompt
-  writeFile(path.join(devflowDir, 'workflow-triggered'), '');
+  writeFile(path.join(devflowDir, 'workflow-active'), '');
   writeFile(path.join(devflowDir, 'pending'), '');
 
   // Load config
@@ -43,7 +43,7 @@ function main(input) {
   // Skip mode (! prefix)
   if (prompt.startsWith(config.skip?.prefix || '!')) {
     removeFile(path.join(devflowDir, 'mode'));
-    removeFile(path.join(devflowDir, 'workflow-triggered'));
+    removeFile(path.join(devflowDir, 'workflow-active'));
     return output({});
   }
 

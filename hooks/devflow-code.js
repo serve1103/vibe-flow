@@ -4,7 +4,6 @@ const path = require('path');
 const { loadConfig } = require('./lib/config');
 const { readFile, writeFile, appendFile, limitFileLines } = require('./lib/io');
 const { cleanupStaleState, checkRecovery } = require('./lib/cleanup');
-// Note: callHaiku and loadSkillPrompt removed — Phase 4 delegates to Skill tool
 
 let inputData = '';
 process.stdin.setEncoding('utf-8');
@@ -33,7 +32,7 @@ function main(input) {
 
   // Recovery: if orphaned processes were killed, reset workflow
   if (checkRecovery(devflowDir)) {
-    writeFile(path.join(devflowDir, 'workflow-triggered'), '');
+    writeFile(path.join(devflowDir, 'workflow-active'), '');
   }
 
   // Skip if planning mode
@@ -77,12 +76,11 @@ function main(input) {
   writeFile(timestampFile, String(now));
 
   // Workflow trigger — skip if already active (prevents infinite loop)
-  const workflowFile = path.join(devflowDir, 'workflow-triggered');
-  const workflowTimestamp = parseInt(readFile(workflowFile) || '0', 10);
-  const WORKFLOW_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+  const workflowFile = path.join(devflowDir, 'workflow-active');
+  const workflowActive = readFile(workflowFile);
 
-  if (workflowTimestamp > 0 && (now - workflowTimestamp) < WORKFLOW_COOLDOWN_MS) {
-    // Workflow already active — skip
+  if (workflowActive === 'true') {
+    // Workflow in progress — skip to avoid re-trigger
     return output({});
   }
 
@@ -96,8 +94,8 @@ function main(input) {
   }
   fs.mkdirSync(resultsDir, { recursive: true });
 
-  // Mark workflow as triggered
-  writeFile(workflowFile, String(now));
+  // Mark workflow as active
+  writeFile(workflowFile, 'true');
 
   // Inject workflow skill invocation
   const inject = '[DevFlow] Skill("devflow:coding-workflow")를 실행하세요.';

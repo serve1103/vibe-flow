@@ -572,10 +572,12 @@ Phase 3 (v0.4, 완료): 자가 학습
      ✓ 학습 규칙 자동 생성 (.devflow/learned-rules/)
      ✓ 드리프트 방지 (만료일 30일, 상한 10개, 보안 스킬 제외)
 
-Phase 4 (v0.5, 설계 완료): 스킬 자율 체이닝
-     → 훅 chain-step 제거 → Skill 도구로 스킬 간 호출
-     → agents/ 등록 → Task(model:haiku) 에이전트 위임
-     → 아티팩트 기반 전제조건 (.devflow/results/)
+Phase 4 (v0.5, 완료): 스킬 자율 체이닝
+     ✓ 훅 chain-step 제거 → Skill 도구로 스킬 간 호출
+     ✓ agents/ 등록 (reviewer, security-reviewer)
+     ✓ 워크플로우 마스터 스킬 (coding-workflow, planning-workflow)
+     ✓ 아티팩트 기반 전제조건 (.devflow/results/)
+     ✓ 5분 쿨다운으로 무한 루프 방지
 
 Phase 5: 팀 공유 + 플랫폼
      → .devflow.json을 Git으로 팀 공유
