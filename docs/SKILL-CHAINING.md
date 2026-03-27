@@ -1,8 +1,34 @@
 # DevFlow Phase 4: 스킬 자율 체이닝
 
-> 상태: 설계
+> 상태: 설계 (핵심 가정 검증 완료)
 > 의존: Phase 2 (스킬 모듈화) + Phase 3 (자가 학습) 완료 후 진행
 > 핵심: 훅 chain-step 제거 → 스킬이 Skill 도구로 다음 스킬 호출 + 아티팩트 기반 전제조건
+
+### PoC 검증 결과 (2026-03-27)
+
+| 가정 | 결과 | 비고 |
+|------|------|------|
+| Skill 도구로 다른 스킬 호출 | **검증 완료** ✓ | test-ping → Skill("test-pong") 체이닝 성공, 3턴 |
+| Agent 도구로 model:haiku 소환 | **검증 완료** ✓ | Haiku 에이전트 소환 + 응답 수신 확인 |
+| 에이전트 등록 없이 model 지정 | **검증 완료** ✓ | plugin.json agents 없이도 model:"haiku" 동작 |
+
+Skill 체이닝 실측:
+```
+/test-ping 실행
+  → Claude가 Skill 도구로 test-pong 호출
+  → test-pong 응답: "pong 응답 완료"
+  → 3턴, ~11초
+```
+
+Haiku 에이전트 실측:
+```
+Agent(model:"haiku", prompt:"1+1은?")
+  → Haiku 응답: "2"
+  → 본체: $0.10 + Haiku: $0.04
+  → 2턴, ~9초
+```
+
+> 참고: agents/ 등록 없이도 Agent 도구의 model 파라미터만으로 Haiku 소환이 가능함. 비판적 검토의 C2(에이전트 등록 필수) 가정은 오류였음. 다만, 전용 에이전트(reviewer.md)를 등록하면 프롬프트를 재사용할 수 있어 일관성 향상.
 
 ---
 
@@ -23,8 +49,8 @@ Phase 4 진행 전 검증 필요:
 
 - [ ] Phase 2 스킬 모듈화가 안정적으로 동작
 - [ ] Phase 3 자가 학습이 스킬 품질을 실제로 개선
-- [ ] Skill 도구로 `Skill("devflow:code-review")` 호출이 동작하는지 확인
-- [ ] Task 도구로 `Task(subagent_type="devflow:reviewer", model="haiku")` 동작 확인
+- [x] Skill 도구로 스킬 간 호출이 동작하는지 확인 (2026-03-27 검증)
+- [x] Agent 도구로 model:haiku 소환이 동작하는지 확인 (2026-03-27 검증)
 - [ ] 훅 chain-step 제거 시 체이닝 안정성 검증
 
 ---

@@ -1,8 +1,32 @@
 # DevFlow Phase 3: 자가 학습
 
-> 상태: 설계
+> 상태: 설계 (핵심 가정 검증 완료)
 > 의존: Phase 2 (스킬 모듈화) 완료 후 진행
 > 핵심: transcript 파싱 기반 피드백 수집 + 규칙 기반 분석 + SKILL.md 자동 갱신
+
+### PoC 검증 결과 (2026-03-27)
+
+| 가정 | 결과 | 비고 |
+|------|------|------|
+| Stop 훅에 `transcript_path` 제공 | **검증 완료** ✓ | JSONL 파일 경로 제공 확인 |
+| Stop 훅에 `session_id` 제공 | **검증 완료** ✓ | 세션 격리에 활용 가능 |
+| Stop 훅에 `last_assistant_message` 제공 | **검증 완료** ✓ | 빠른 분석용 |
+| Stop 훅에 `cwd` 제공 | **검증 완료** ✓ | 상태 파일 경로 |
+
+Stop 훅 실제 input 예시:
+```json
+{
+  "session_id": "UUID",
+  "transcript_path": "/Users/.../.claude/projects/.../세션ID.jsonl",
+  "cwd": "/프로젝트/경로",
+  "permission_mode": "dontAsk",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "Claude 마지막 응답"
+}
+```
+
+> 참고: CONCEPT.md에서 "Stop 훅은 additionalContext 미지원이므로 사용하지 않는다"고 했으나, Phase 3에서는 additionalContext가 불필요한 분석 전용 용도로 사용하므로 제약에 해당하지 않음.
 
 ---
 
