@@ -558,19 +558,27 @@ PostToolUse 발동 시:
 ## 11. 확장 경로
 
 ```
-Phase 1 (지금): 기획 모드 + 개발 모드, Node.js 플러그인
-     ↓ 검증: "인터뷰+검토가 기획 품질을 올리는가?"
-     ↓ 검증: "자동 리뷰+보안이 코드 품질을 올리는가?"
+Phase 1 (v0.2, 완료): 기획 모드 + 개발 모드, Node.js 플러그인
+     ✓ 4단계 체이닝, 자원 관리, 고아 프로세스 정리
 
-Phase 2: 세부 설정 활성화
-     → severity, checks, command 등 세부 토글 동작
-     → 설정 파일 검증 및 에러 메시지
+Phase 2 (v0.3, 완료): 스킬 모듈화
+     ✓ 하드코딩 프롬프트 → skills/*/SKILL.md 분리
+     ✓ skill-loader.js + references/ 인라인
+     ✓ /devflow:스킬 수동 호출 지원 (플러그인 설치 시)
 
-Phase 3: 팀 공유
+Phase 3 (v0.4, 완료): 자가 학습
+     ✓ PostToolUse async 관찰 (observations.jsonl)
+     ✓ Stop 훅 transcript 분석 (피드백 추출)
+     ✓ 학습 규칙 자동 생성 (.devflow/learned-rules/)
+     ✓ 드리프트 방지 (만료일 30일, 상한 10개, 보안 스킬 제외)
+
+Phase 4 (v0.5, 설계 완료): 스킬 자율 체이닝
+     → 훅 chain-step 제거 → Skill 도구로 스킬 간 호출
+     → agents/ 등록 → Task(model:haiku) 에이전트 위임
+     → 아티팩트 기반 전제조건 (.devflow/results/)
+
+Phase 5: 팀 공유 + 플랫폼
      → .devflow.json을 Git으로 팀 공유
      → Claude Code 플러그인 마켓플레이스 배포
-     → 같은 프로세스, 같은 품질 기준
-
-Phase 4: 플랫폼
-     → 패턴 학습, 분석 대시보드
+     → 분석 대시보드
 ```
