@@ -1,5 +1,5 @@
 {
-  "description": "DevFlow - 기획 모드 + 개발 모드 자동화",
+  "description": "DevFlow - 기획 모드 + 개발 모드 + 자가 학습",
   "hooks": {
     "UserPromptSubmit": [
       {

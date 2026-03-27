@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { parseTranscript, extractFeedback } = require('./lib/transcript');
-const { updateRules } = require('./lib/learning');
+const { updateRules, normalizePattern } = require('./lib/learning');
 const { readFile, writeFile, appendFile } = require('./lib/io');
 
 let inputData = '';
@@ -31,29 +31,29 @@ function main(input) {
   const feedbackDir = path.join(cwd, '.devflow', 'feedback');
   fs.mkdirSync(feedbackDir, { recursive: true });
 
-  // Check if already analyzed this session to avoid duplicate work
+  // Dedup: skip if transcript hasn't grown since last analysis
   const lastAnalyzed = readFile(path.join(feedbackDir, 'last-analyzed'));
-  if (lastAnalyzed === sessionId) return output({});
-
-  // Parse last 200 lines of transcript (performance guard)
   const entries = parseTranscript(transcriptPath, 200);
+  const dedupeKey = `${sessionId}:${entries.length}`;
+  if (lastAnalyzed === dedupeKey) return output({});
+
   if (entries.length === 0) return output({});
 
   // Extract DevFlow feedback signals
   const feedback = extractFeedback(entries);
   if (feedback.length === 0) {
-    writeFile(path.join(feedbackDir, 'last-analyzed'), sessionId);
+    writeFile(path.join(feedbackDir, 'last-analyzed'), dedupeKey);
     return output({});
   }
 
-  // Record feedback to analysis.jsonl
+  // Record feedback to analysis.jsonl (normalize suggestion for consistent grouping)
   const analysisFile = path.join(feedbackDir, 'analysis.jsonl');
   for (const item of feedback) {
     const entry = JSON.stringify({
       timestamp: Date.now(),
       session_id: sessionId,
       skill: item.skill,
-      suggestion: item.suggestion,
+      suggestion: normalizePattern(item.suggestion),
       signal: item.signal,
       file: item.file
     });
@@ -102,7 +102,7 @@ function main(input) {
     // Non-critical, continue
   }
 
-  writeFile(path.join(feedbackDir, 'last-analyzed'), sessionId);
+  writeFile(path.join(feedbackDir, 'last-analyzed'), dedupeKey);
   output({});
 }
 

@@ -62,13 +62,20 @@ function extractFeedback(entries) {
 }
 
 function findDevFlowContext(entry) {
-  // Look for DevFlow markers in various message structures
-  const text = JSON.stringify(entry);
-  if (text.includes('[DevFlow')) {
-    // Extract the DevFlow-related content
-    const match = text.match(/\[DevFlow[^\]]*\][^"']*/);
-    return match ? match[0] : null;
+  // Navigate known transcript structures for additionalContext
+  const candidates = [
+    entry?.message?.content?.additionalContext,
+    entry?.additionalContext,
+    entry?.hookSpecificOutput?.additionalContext,
+    // Fallback: check string content fields
+    entry?.message?.content,
+    entry?.content
+  ];
+
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.includes('[DevFlow')) return c;
   }
+
   return null;
 }
 
@@ -113,12 +120,14 @@ function determineSignal(entries, devflowIndex, reviewedFiles) {
       return 'rejected';
     }
 
-    // Check for Edit/Write on the same reviewed files
-    if (text.includes('Write') || text.includes('Edit')) {
+    // Check for tool_name Write/Edit (not just the word in text)
+    const toolName = next?.tool_name || next?.message?.tool_name || '';
+    if (toolName === 'Write' || toolName === 'Edit') {
       if (reviewedFiles.length === 0) return 'accepted';
       // Check if the edit targets a reviewed file
+      const targetFile = next?.tool_input?.file_path || next?.message?.tool_input?.file_path || '';
       for (const f of reviewedFiles) {
-        if (text.includes(f)) return 'accepted';
+        if (targetFile.includes(f) || f.includes(targetFile)) return 'accepted';
       }
     }
   }

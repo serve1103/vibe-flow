@@ -120,11 +120,11 @@ function updateRules(cwd, feedbackItems) {
  */
 function normalizePattern(suggestion) {
   return suggestion
-    .replace(/\[.*?\]/g, '')     // Remove severity tags
-    .replace(/→.*$/g, '')        // Remove suggestion part after arrow
-    .replace(/[^\w가-힣\s]/g, '') // Keep words only
+    .replace(/\[.*?\]/g, '')       // Remove severity tags
+    .replace(/[^\w가-힣\s→]/g, '') // Keep words + Korean + space + arrow
     .trim()
-    .substring(0, 60);
+    .toLowerCase()
+    .substring(0, 80);
 }
 
-module.exports = { loadRules, getActiveRules, formatRulesForPrompt, updateRules };
+module.exports = { loadRules, getActiveRules, formatRulesForPrompt, updateRules, normalizePattern };
