@@ -1,10 +1,11 @@
 const fs = require('fs');
 const path = require('path');
+const { formatRulesForPrompt } = require('./learning');
 
 const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT
   || path.resolve(__dirname, '..', '..');
 
-function loadSkillPrompt(skillName) {
+function loadSkillPrompt(skillName, cwd) {
   const skillDir = path.join(PLUGIN_ROOT, 'skills', skillName);
   const skillPath = path.join(skillDir, 'SKILL.md');
 
@@ -24,6 +25,12 @@ function loadSkillPrompt(skillName) {
           content += `\n\n---\n## ${ref.replace('.md', '')}\n${refContent}`;
         }
       }
+    }
+
+    // Append learned rules if cwd provided
+    if (cwd) {
+      const rulesText = formatRulesForPrompt(cwd, skillName);
+      if (rulesText) content += rulesText;
     }
 
     return content;

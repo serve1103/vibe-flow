@@ -71,7 +71,7 @@ function main(input) {
   }
 
   // Ask Haiku for mode decision
-  const interviewSkill = loadSkillPrompt('interview');
+  const interviewSkill = loadSkillPrompt('interview', cwd);
   const haikuPrompt = interviewSkill
     ? `${interviewSkill}\n\n## 프로젝트 컨텍스트\n${context}\n\n## 사용자 프롬프트\n<user_input>\n${prompt}\n</user_input>`
     : `당신은 개발 프로세스 판단기입니다.\n\n## 판단 규칙\n1. 프롬프트의 작업 주제를 추출하세요\n2. 프로젝트 컨텍스트의 docs/ 파일 목록에서 해당 주제의 설계/기획 문서가 있는지 확인하세요\n3. 설계 문서가 있으면 → 개발 준비 완료 (pass)\n4. 설계 문서가 없으면 → 기획이 필요 (plan)\n5. 단순 질문, 버그 수정, 리팩토링은 → pass\n\nJSON으로만 응답:\n개발 모드: {"mode":"pass"}\n기획 모드: {"mode":"plan","topic":"주제","missing":["빠진 정보1"],"concerns":["우려사항1"]}\n\n## 프로젝트 컨텍스트\n${context}\n\n## 사용자 프롬프트\n<user_input>\n${prompt}\n</user_input>`;
@@ -90,7 +90,7 @@ function main(input) {
   const missing = (analysis.missing || []).map(m => `  - ${m}`).join('\n');
   const concerns = (analysis.concerns || []).map(c => `  - ${c}`).join('\n');
 
-  const criticalSkill = loadSkillPrompt('critical-review');
+  const criticalSkill = loadSkillPrompt('critical-review', cwd);
 
   let inject = `[DevFlow 기획 모드] 주제: ${topic}\n\n`;
   if (missing) inject += `## 확인이 필요한 사항\n다음을 사용자에게 질문한 후 진행하세요:\n${missing}\n\n`;

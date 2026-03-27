@@ -6,7 +6,7 @@
     {
       "name": "devflow",
       "description": "Claude Code에 개발 프로세스를 입히는 경량 확장",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "source": "./",
       "category": "workflow",
       "keywords": ["devflow", "code-review", "security", "automation", "workflow"]
