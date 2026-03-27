@@ -75,12 +75,10 @@ function main(input) {
   }
   writeFile(timestampFile, String(now));
 
-  // Workflow trigger — skip if already active (prevents infinite loop)
+  // Skip files written during active workflow (prevents pending contamination)
   const workflowFile = path.join(devflowDir, 'workflow-active');
   const workflowActive = readFile(workflowFile);
-
   if (workflowActive === 'true') {
-    // Workflow in progress — skip to avoid re-trigger
     return output({});
   }
 

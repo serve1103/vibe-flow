@@ -67,7 +67,7 @@ Phase 2:
 Phase 4:
   훅 → "coding-workflow 스킬을 실행하세요" (1회 주입)
   스킬 → Skill("devflow:code-review") → Skill("devflow:security-check") → ...
-  각 스킬 → Task(model="haiku")로 분석 위임
+  각 스킬 → Agent(model="haiku")로 분석 위임
 ```
 
 ### 3.2 구성 요소
@@ -140,7 +140,7 @@ JSON으로만 응답:
 ```json
 {
   "name": "devflow",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "skills": "./skills/",
   "agents": [
     "./agents/reviewer.md",
@@ -201,7 +201,7 @@ handoff: .devflow/results/code-review.json
 
 ## 절차
 1. 변경된 코드를 수집 (Read 도구)
-2. Task(subagent_type="devflow:reviewer", model="haiku") 소환
+2. Agent(model="haiku") 소환
    - 변경된 코드를 프롬프트에 포함
    - 리뷰 결과 JSON 수신
 3. 결과 분석 — high 이상 이슈가 있으면 수정

@@ -11,7 +11,8 @@ description: |
 
 1. Skill("devflow:interview") 실행 — 누락된 정보 질문
 2. Skill("devflow:critical-review") 실행 — 비판적 검토
-3. Skill("devflow:doc-update") 실행 — docs/에 설계 문서 작성
+3. 인터뷰와 비판적 검토 결과를 기반으로 docs/에 설계 문서를 직접 작성하세요
+   (doc-update 스킬은 코드 변경 후 문서 갱신용이므로, 기획 모드에서는 직접 작성)
 
 ## 규칙
 - 각 스킬을 Skill 도구로 호출하세요. 직접 수행하지 마세요.
