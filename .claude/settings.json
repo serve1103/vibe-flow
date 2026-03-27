@@ -1,0 +1,42 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [{
+          "type": "command",
+          "command": "node /Users/han/develop/AI-Agent/hooks/devflow-prompt.js",
+          "timeout": 30
+        }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/han/develop/AI-Agent/hooks/devflow-code.js",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node /Users/han/develop/AI-Agent/hooks/devflow-observe.js",
+            "timeout": 10,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [{
+          "type": "command",
+          "command": "node /Users/han/develop/AI-Agent/hooks/devflow-analyze.js",
+          "timeout": 10
+        }]
+      }
+    ]
+  }
+}
