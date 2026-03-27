@@ -46,6 +46,16 @@ function main(input) {
   const basename = path.basename(filePath);
   const ext = path.extname(filePath).replace('.', '');
 
+  // Skip DevFlow's own files (self-reference prevention)
+  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || '';
+  if (pluginRoot && filePath.startsWith(pluginRoot)) return output({});
+
+  // Skip paths (configurable directories)
+  const skipPaths = config.skip?.paths || ['hooks/', 'skills/', 'agents/', '.devflow/'];
+  for (const sp of skipPaths) {
+    if (filePath.includes(sp)) return output({});
+  }
+
   // Skip filenames
   const skipFilenames = config.skip?.filenames || [];
   if (skipFilenames.includes(basename)) return output({});

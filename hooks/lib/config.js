@@ -14,7 +14,8 @@ const DEFAULTS = {
     prefix: '!',
     extensions: ['md','json','yaml','yml','txt','toml','lock','env','cfg','ini','csv'],
     filenames: ['.gitignore','.dockerignore','Makefile','Dockerfile','LICENSE'],
-    prefixes: ['.env']
+    prefixes: ['.env'],
+    paths: ['.devflow/', '.claude/']
   }
 };
 
