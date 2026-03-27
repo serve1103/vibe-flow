@@ -5,6 +5,7 @@ const { loadConfig } = require('./lib/config');
 const { callHaiku } = require('./lib/haiku');
 const { writeFile, removeFile } = require('./lib/io');
 const { runCleanup } = require('./lib/cleanup');
+const { loadSkillPrompt } = require('./lib/skill-loader');
 
 // Read stdin
 let inputData = '';
@@ -70,26 +71,10 @@ function main(input) {
   }
 
   // Ask Haiku for mode decision
-  const haikuPrompt = `당신은 개발 프로세스 판단기입니다.
-
-## 판단 규칙
-1. 프롬프트의 작업 주제를 추출하세요
-2. 프로젝트 컨텍스트의 docs/ 파일 목록에서 해당 주제의 설계/기획 문서가 있는지 확인하세요
-3. 설계 문서가 있으면 → 개발 준비 완료 (pass)
-4. 설계 문서가 없으면 → 기획이 필요 (plan)
-5. 단순 질문, 버그 수정, 리팩토링은 → pass
-
-JSON으로만 응답:
-개발 모드: {"mode":"pass"}
-기획 모드: {"mode":"plan","topic":"주제","missing":["빠진 정보1"],"concerns":["우려사항1"]}
-
-## 프로젝트 컨텍스트
-${context}
-
-## 사용자 프롬프트
-<user_input>
-${prompt}
-</user_input>`;
+  const interviewSkill = loadSkillPrompt('interview');
+  const haikuPrompt = interviewSkill
+    ? `${interviewSkill}\n\n## 프로젝트 컨텍스트\n${context}\n\n## 사용자 프롬프트\n<user_input>\n${prompt}\n</user_input>`
+    : `당신은 개발 프로세스 판단기입니다.\n\n## 판단 규칙\n1. 프롬프트의 작업 주제를 추출하세요\n2. 프로젝트 컨텍스트의 docs/ 파일 목록에서 해당 주제의 설계/기획 문서가 있는지 확인하세요\n3. 설계 문서가 있으면 → 개발 준비 완료 (pass)\n4. 설계 문서가 없으면 → 기획이 필요 (plan)\n5. 단순 질문, 버그 수정, 리팩토링은 → pass\n\nJSON으로만 응답:\n개발 모드: {"mode":"pass"}\n기획 모드: {"mode":"plan","topic":"주제","missing":["빠진 정보1"],"concerns":["우려사항1"]}\n\n## 프로젝트 컨텍스트\n${context}\n\n## 사용자 프롬프트\n<user_input>\n${prompt}\n</user_input>`;
 
   const analysis = callHaiku(haikuPrompt, { mode: 'pass' });
 
@@ -105,9 +90,17 @@ ${prompt}
   const missing = (analysis.missing || []).map(m => `  - ${m}`).join('\n');
   const concerns = (analysis.concerns || []).map(c => `  - ${c}`).join('\n');
 
+  const criticalSkill = loadSkillPrompt('critical-review');
+
   let inject = `[DevFlow 기획 모드] 주제: ${topic}\n\n`;
   if (missing) inject += `## 확인이 필요한 사항\n다음을 사용자에게 질문한 후 진행하세요:\n${missing}\n\n`;
-  if (concerns) inject += `## 비판적 검토\n다음 우려사항을 고려하세요:\n${concerns}\n\n`;
+  if (concerns) {
+    if (criticalSkill) {
+      inject += `## 비판적 검토\n${criticalSkill}\n\n우려사항:\n${concerns}\n\n`;
+    } else {
+      inject += `## 비판적 검토\n다음 우려사항을 고려하세요:\n${concerns}\n\n`;
+    }
+  }
   inject += `## 요청사항\n1. 위 질문에 대한 답변을 받으세요\n2. 답변을 기반으로 설계를 정리하세요\n3. docs/ 디렉토리에 설계 문서를 작성하세요\n4. 설계가 완료되면 구현 여부를 확인하세요`;
 
   output({

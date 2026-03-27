@@ -5,6 +5,7 @@ const { loadConfig } = require('./lib/config');
 const { callHaiku } = require('./lib/haiku');
 const { readFile, writeFile, appendFile, readFileLines, limitFileLines } = require('./lib/io');
 const { cleanupStaleState, checkRecovery } = require('./lib/cleanup');
+const { loadSkillPrompt } = require('./lib/skill-loader');
 
 let inputData = '';
 process.stdin.setEncoding('utf-8');
@@ -119,7 +120,10 @@ function main(input) {
 
       // Code review
       if (config.coding.code_review?.enabled) {
-        const reviewPrompt = `다음 코드 변경을 리뷰하세요. high 이상 심각도의 문제만 보고하세요.\n\n파일: ${pendingFiles}\n코드:\n<code>\n${codeContent}\n</code>\n\nJSON으로만 응답:\n문제없음: {"issues":[]}\n문제있음: {"issues":[{"severity":"high","description":"설명","suggestion":"제안"}]}`;
+        const skillPrompt = loadSkillPrompt('code-review');
+        const reviewPrompt = skillPrompt
+          ? `${skillPrompt}\n\n파일: ${pendingFiles}\n코드:\n<code>\n${codeContent}\n</code>`
+          : `다음 코드 변경을 리뷰하세요. high 이상 심각도의 문제만 보고하세요.\n\n파일: ${pendingFiles}\n코드:\n<code>\n${codeContent}\n</code>\n\nJSON으로만 응답:\n문제없음: {"issues":[]}\n문제있음: {"issues":[{"severity":"high","description":"설명","suggestion":"제안"}]}`;
 
         const review = callHaiku(reviewPrompt, { issues: [] });
         if (review.issues && review.issues.length > 0) {
@@ -130,7 +134,10 @@ function main(input) {
 
       // Security review
       if (config.coding.security_review?.enabled) {
-        const secPrompt = `다음 코드에서 보안 취약점을 체크하세요.\n체크 항목: SQL injection, 하드코딩된 시크릿/API키, 경로 탐색, 인증 우회\n\n파일: ${pendingFiles}\n코드:\n<code>\n${codeContent}\n</code>\n\nJSON으로만 응답:\n안전: {"safe":true}\n취약점: {"safe":false,"issues":[{"severity":"critical","description":"설명"}]}`;
+        const secSkillPrompt = loadSkillPrompt('security-check');
+        const secPrompt = secSkillPrompt
+          ? `${secSkillPrompt}\n\n파일: ${pendingFiles}\n코드:\n<code>\n${codeContent}\n</code>`
+          : `다음 코드에서 보안 취약점을 체크하세요.\n체크 항목: SQL injection, 하드코딩된 시크릿/API키, 경로 탐색, 인증 우회\n\n파일: ${pendingFiles}\n코드:\n<code>\n${codeContent}\n</code>\n\nJSON으로만 응답:\n안전: {"safe":true}\n취약점: {"safe":false,"issues":[{"severity":"critical","description":"설명"}]}`;
 
         const security = callHaiku(secPrompt, { safe: true });
         if (security.safe === false && security.issues) {
@@ -147,7 +154,10 @@ function main(input) {
     case 2: {
       // Step 2: Test suggestion
       if (config.coding.test?.enabled) {
-        inject = '[DevFlow] 변경된 코드에 대한 테스트를 작성하고 실행하세요.';
+        const testSkill = loadSkillPrompt('test-suggest');
+        inject = testSkill
+          ? `[DevFlow]\n${testSkill}`
+          : '[DevFlow] 변경된 코드에 대한 테스트를 작성하고 실행하세요.';
       }
       writeFile(chainStepFile, '3');
       break;
@@ -166,12 +176,18 @@ function main(input) {
       }
 
       if (docSuggest) {
-        inject = `[DevFlow] ${docSuggest}`;
+        const docSkill = loadSkillPrompt('doc-update');
+        inject = docSkill
+          ? `[DevFlow]\n${docSkill}\n\n현재 상황: ${docSuggest}`
+          : `[DevFlow] ${docSuggest}`;
         writeFile(chainStepFile, '4');
       } else {
         // Skip to commit
         if (config.coding.commit?.enabled) {
-          inject = '[DevFlow] 모든 변경이 완료되었으면 커밋하세요. Conventional Commits 형식을 사용하세요.';
+          const commitSkill = loadSkillPrompt('commit');
+          inject = commitSkill
+            ? `[DevFlow]\n${commitSkill}`
+            : '[DevFlow] 모든 변경이 완료되었으면 커밋하세요. Conventional Commits 형식을 사용하세요.';
         }
         writeFile(chainStepFile, '1');
         writeFile(pendingFile, '');
@@ -182,7 +198,10 @@ function main(input) {
     case 4: {
       // Step 4: Commit suggestion
       if (config.coding.commit?.enabled) {
-        inject = '[DevFlow] 모든 변경이 완료되었으면 커밋하세요. Conventional Commits 형식을 사용하세요.';
+        const commitSkill = loadSkillPrompt('commit');
+        inject = commitSkill
+          ? `[DevFlow]\n${commitSkill}`
+          : '[DevFlow] 모든 변경이 완료되었으면 커밋하세요. Conventional Commits 형식을 사용하세요.';
       }
       writeFile(chainStepFile, '1');
       writeFile(pendingFile, '');
