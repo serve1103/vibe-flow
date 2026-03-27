@@ -30,8 +30,8 @@ function main(input) {
   // Ensure state dir
   fs.mkdirSync(devflowDir, { recursive: true });
 
-  // Reset chain on new prompt
-  writeFile(path.join(devflowDir, 'chain-step'), '1');
+  // Reset workflow on new prompt
+  writeFile(path.join(devflowDir, 'workflow-triggered'), '');
   writeFile(path.join(devflowDir, 'pending'), '');
 
   // Load config
@@ -43,7 +43,7 @@ function main(input) {
   // Skip mode (! prefix)
   if (prompt.startsWith(config.skip?.prefix || '!')) {
     removeFile(path.join(devflowDir, 'mode'));
-    removeFile(path.join(devflowDir, 'chain-step'));
+    removeFile(path.join(devflowDir, 'workflow-triggered'));
     return output({});
   }
 
@@ -90,18 +90,10 @@ function main(input) {
   const missing = (analysis.missing || []).map(m => `  - ${m}`).join('\n');
   const concerns = (analysis.concerns || []).map(c => `  - ${c}`).join('\n');
 
-  const criticalSkill = loadSkillPrompt('critical-review', cwd);
-
   let inject = `[DevFlow 기획 모드] 주제: ${topic}\n\n`;
-  if (missing) inject += `## 확인이 필요한 사항\n다음을 사용자에게 질문한 후 진행하세요:\n${missing}\n\n`;
-  if (concerns) {
-    if (criticalSkill) {
-      inject += `## 비판적 검토\n${criticalSkill}\n\n우려사항:\n${concerns}\n\n`;
-    } else {
-      inject += `## 비판적 검토\n다음 우려사항을 고려하세요:\n${concerns}\n\n`;
-    }
-  }
-  inject += `## 요청사항\n1. 위 질문에 대한 답변을 받으세요\n2. 답변을 기반으로 설계를 정리하세요\n3. docs/ 디렉토리에 설계 문서를 작성하세요\n4. 설계가 완료되면 구현 여부를 확인하세요`;
+  if (missing) inject += `## 확인이 필요한 사항\n${missing}\n\n`;
+  if (concerns) inject += `## 비판적 검토 필요\n${concerns}\n\n`;
+  inject += `Skill("devflow:planning-workflow")를 실행하세요.`;
 
   output({
     hookSpecificOutput: {

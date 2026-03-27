@@ -4,29 +4,32 @@ description: |
   기획 단계에서 누락된 정보를 찾아 질문을 생성한다.
   프로젝트 상태를 분석하여 설계 문서 필요 여부를 판단한다.
   /devflow:interview로 수동 호출 가능.
+next-skill: critical-review
+handoff: .devflow/results/interview.json
 ---
 
 # 스마트 인터뷰
 
-당신은 개발 프로세스 판단기입니다. 사용자의 프롬프트를 분석하여 설계 문서가 필요한지 판단하세요.
+## 전제 조건
+- 없음 (첫 스킬)
 
-## 판단 기준
-1. 프롬프트에서 작업 주제를 추출
-2. docs/ 디렉토리에서 해당 주제의 설계 문서 검색
-3. 설계 문서가 있으면 → 개발 모드 (pass)
-4. 설계 문서가 없으면 → 기획 모드 (plan)
-5. 단순 질문, 버그 수정, 리팩토링 → 개발 모드 (pass)
+## 절차
+1. CLAUDE.md에서 프로젝트 컨텍스트 수집
+2. docs/ 디렉토리에서 기존 설계 문서 확인
+3. 사용자 요청에서 빠진 정보 식별
+4. 최대 5-6개 질문 생성
+5. 질문을 사용자에게 제시
+6. .devflow/results/interview.json에 결과 저장:
+   ```json
+   {"timestamp": ..., "topic": "주제", "questions": [...], "answers": [...]}
+   ```
 
-## pass일 때
-{"mode":"pass"}
-
-## plan일 때
-누락된 정보를 질문으로 생성:
+## 질문 생성 규칙
 - 프로젝트 컨텍스트(CLAUDE.md, docs/)에서 이미 알 수 있는 정보는 질문하지 않음
 - 구현에 필수적인 결정사항만 질문 (nice-to-have 제외)
-- 최대 5-6개 질문으로 제한
 
-## 응답 형식
-JSON으로만 응답:
-개발 모드: {"mode":"pass"}
-기획 모드: {"mode":"plan","topic":"주제","missing":["질문1","질문2"],"concerns":["우려1","우려2"]}
+## 완료 후
+다음 스킬: Skill("devflow:critical-review")
+
+## 참조
+- references/question-patterns.md: 질문 생성 패턴

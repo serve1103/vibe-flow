@@ -37,7 +37,7 @@ assert(basic.includes('severity-guide'), 'references inlined');
 // Test 2: Load skill with cwd but no rules
 const withCwd = loadSkillPrompt('code-review', testCwd);
 assert(withCwd !== null, 'code-review with cwd loaded');
-assert(!withCwd.includes('학습된 규칙'), 'no learned rules section (empty)');
+assert(!withCwd.includes('(자동 생성)'), 'no dynamic learned rules (empty)');
 
 // Test 3: Load skill with learned rules
 const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
@@ -53,7 +53,7 @@ fs.writeFileSync(path.join(rulesDir, 'code-review.json'), JSON.stringify({
 }));
 
 const withRules = loadSkillPrompt('code-review', testCwd);
-assert(withRules.includes('학습된 규칙'), 'learned rules section present');
+assert(withRules.includes('(자동 생성)'), 'dynamic learned rules section present');
 assert(withRules.includes('try-catch 누락'), 'rule content included');
 assert(withRules.includes('skip'), 'skip action included');
 
@@ -71,7 +71,7 @@ assert(missing === null, 'missing skill returns null');
 // Test 6: Load without cwd (no rules applied)
 const noCwd = loadSkillPrompt('code-review');
 assert(noCwd !== null, 'loads without cwd');
-assert(!noCwd.includes('학습된 규칙'), 'no rules without cwd');
+assert(!noCwd.includes('(자동 생성)'), 'no dynamic rules without cwd');
 
 // Cleanup
 fs.rmSync(testCwd, { recursive: true, force: true });
