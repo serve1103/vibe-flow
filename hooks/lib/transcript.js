@@ -113,10 +113,9 @@ function determineSignal(entries, devflowIndex, reviewedFiles) {
   // Look at the next few entries after DevFlow injection
   for (let j = devflowIndex + 1; j < Math.min(devflowIndex + 5, entries.length); j++) {
     const next = entries[j];
-    const text = JSON.stringify(next);
-
-    // Check for user rejection keywords
-    if (/불필요|무시|스킵|skip|ignore/i.test(text)) {
+    // Check for user rejection keywords (user message fields only)
+    const userText = next?.message?.content || next?.content || '';
+    if (typeof userText === 'string' && /불필요|무시|스킵|skip|ignore/i.test(userText)) {
       return 'rejected';
     }
 

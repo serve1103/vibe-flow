@@ -30,9 +30,12 @@ function loadConfig(cwd) {
   }
 }
 
+const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 function deepMerge(target, source) {
   const result = { ...target };
   for (const key of Object.keys(source)) {
+    if (DANGEROUS_KEYS.has(key)) continue;
     if (source[key] !== null && typeof source[key] === 'object' && !Array.isArray(source[key])) {
       result[key] = deepMerge(target[key] || {}, source[key]);
     } else {

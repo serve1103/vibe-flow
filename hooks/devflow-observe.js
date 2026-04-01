@@ -3,7 +3,15 @@
 const fs = require('fs');
 const path = require('path');
 
-const SECRET_PATTERN = /(?:api[_-]?key|token|secret|password|credential|auth)\s*[:=]\s*["'][^"']{8,}["']/gi;
+const SECRET_PATTERNS = [
+  /(?:api[_-]?key|token|secret|password|credential|auth)\s*[:=]\s*["'][^"']{8,}["']/gi,
+  /(?:api[_-]?key|token|secret|password|credential|auth)\s*[:=]\s*[^\s"']{8,}/gi,
+  /\b(ghp_[A-Za-z0-9]{36}|gho_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,})\b/g,
+  /\bAKIA[A-Z0-9]{16}\b/g,
+  /\b(sk-[a-zA-Z0-9]{20,}|sk-proj-[a-zA-Z0-9_-]{20,})\b/g,
+  /-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----/g,
+  /Bearer\s+[A-Za-z0-9._~+/=-]{20,}/gi,
+];
 
 let inputData = '';
 process.stdin.setEncoding('utf-8');
@@ -37,7 +45,9 @@ function main(input) {
   }
 
   // Scrub secrets
-  context = context.replace(SECRET_PATTERN, '[REDACTED]');
+  for (const pat of SECRET_PATTERNS) {
+    context = context.replace(pat, '[REDACTED]');
+  }
 
   const feedbackDir = path.join(cwd, '.devflow', 'feedback');
   fs.mkdirSync(feedbackDir, { recursive: true });

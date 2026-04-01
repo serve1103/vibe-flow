@@ -70,24 +70,25 @@ assert(result.trim() === '{}', '.devflow/ path skipped');
 console.log('\nplanning mode:');
 fs.mkdirSync(devflowDir, { recursive: true });
 fs.writeFileSync(path.join(devflowDir, 'mode'), 'planning');
-result = runHook({ tool_name: 'Write', cwd: testCwd, tool_input: { file_path: '/src/app.js' } });
+result = runHook({ tool_name: 'Write', cwd: testCwd, tool_input: { file_path: path.join(testCwd, 'src/app.js') } });
 assert(result.trim() === '{}', 'planning mode skipped');
 
 // Test 7: Workflow active skip
 console.log('\nworkflow-active:');
 fs.writeFileSync(path.join(devflowDir, 'mode'), 'coding');
 fs.writeFileSync(path.join(devflowDir, 'workflow-active'), 'true');
-result = runHook({ tool_name: 'Write', cwd: testCwd, tool_input: { file_path: '/src/app.js' } });
+result = runHook({ tool_name: 'Write', cwd: testCwd, tool_input: { file_path: path.join(testCwd, 'src/app.js') } });
 assert(result.trim() === '{}', 'workflow-active skipped');
 
 // Test 8: Normal file triggers workflow
 console.log('\nworkflow trigger:');
-fs.writeFileSync(path.join(devflowDir, 'workflow-active'), '');
+// Must DELETE workflow-active (wx flag requires file not exist)
+try { fs.unlinkSync(path.join(devflowDir, 'workflow-active')); } catch {}
 fs.writeFileSync(path.join(devflowDir, 'mode'), 'coding');
 // Clear debouncing state so it doesn't skip
 try { fs.unlinkSync(path.join(devflowDir, 'last-change')); } catch {}
 try { fs.unlinkSync(path.join(devflowDir, 'pending')); } catch {}
-result = runHook({ tool_name: 'Write', cwd: testCwd, tool_input: { file_path: '/src/app.js' } });
+result = runHook({ tool_name: 'Write', cwd: testCwd, tool_input: { file_path: path.join(testCwd, 'src/app.js') } });
 const parsed = JSON.parse(result.trim());
 assert(parsed.hookSpecificOutput !== undefined, 'workflow triggered');
 assert(parsed.hookSpecificOutput?.additionalContext?.includes('coding-workflow'), 'coding-workflow injected');

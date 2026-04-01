@@ -39,9 +39,12 @@ function main(input) {
   const mode = readFile(path.join(devflowDir, 'mode'));
   if (mode === 'planning') return output({});
 
-  // File path check
-  const filePath = input.tool_input?.file_path || '';
-  if (!filePath) return output({});
+  // File path check + path traversal prevention
+  const rawPath = input.tool_input?.file_path || '';
+  if (!rawPath) return output({});
+  const filePath = path.resolve(rawPath);
+  // Block paths containing traversal sequences
+  if (rawPath.includes('..')) return output({});
 
   const basename = path.basename(filePath);
   const ext = path.extname(filePath).replace('.', '');
@@ -86,24 +89,19 @@ function main(input) {
   writeFile(timestampFile, String(now));
 
   // Skip files written during active workflow (prevents pending contamination)
+  // Atomic creation with 'wx' flag prevents TOCTOU race condition
   const workflowFile = path.join(devflowDir, 'workflow-active');
-  const workflowActive = readFile(workflowFile);
-  if (workflowActive === 'true') {
+  try {
+    fs.writeFileSync(workflowFile, 'true', { flag: 'wx' });
+  } catch {
+    // File already exists — workflow is active, skip
     return output({});
   }
 
   // New workflow cycle — clear results and trigger
   const resultsDir = path.join(devflowDir, 'results');
-  if (fs.existsSync(resultsDir)) {
-    try {
-      const files = fs.readdirSync(resultsDir);
-      for (const f of files) fs.unlinkSync(path.join(resultsDir, f));
-    } catch {}
-  }
+  fs.rmSync(resultsDir, { recursive: true, force: true });
   fs.mkdirSync(resultsDir, { recursive: true });
-
-  // Mark workflow as active
-  writeFile(workflowFile, 'true');
 
   // Inject workflow skill invocation
   const inject = '[DevFlow] Skill("devflow:coding-workflow")를 실행하세요.';
